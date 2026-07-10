@@ -1,0 +1,23 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: verza-mysql
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: verza_root
+      MYSQL_DATABASE: verza_os
+      MYSQL_USER: verza
+      MYSQL_PASSWORD: verza_dev
+    ports:
+      # 3307 on the host: a pre-existing local mysqld owns 3306 on this machine.
+      - '3307:3306'
+    volumes:
+      - verza_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ['CMD', 'mysqladmin', 'ping', '-h', 'localhost', '-uverza', '-pverza_dev']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  verza_mysql_data:

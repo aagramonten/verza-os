@@ -1,0 +1,422 @@
+// Verza OS — Vera Chat MVP schema.
+// Source of truth: docs/vera-chat-mvp-plan.md §2 + docs/vera-conversation-strategy.md §8.
+// Conventions: uuid PKs, companyId on every tenant table + composite indexes,
+// money in INT cents, append-only tables noted.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Enums ────────────────────────────────────────────────────────────
+
+enum ServiceType {
+  DESIGN_INSTALLATION
+  LAWN
+  IRRIGATION
+  LIGHTING
+  PLANTING
+  CLEANUP
+  MAINTENANCE
+  OTHER
+}
+
+enum LeadStatus {
+  DRAFT
+  COLLECTING
+  PENDING_CONFIRMATION
+  READY_FOR_REVIEW
+  ARCHIVED
+}
+
+enum ChatSessionState {
+  GREETING
+  COLLECTING_SERVICE
+  COLLECTING_DETAILS
+  COLLECTING_MEDIA
+  COLLECTING_MEASURES
+  ESTIMATE_OFFERED
+  SUMMARY_SHOWN
+  CONFIRMED
+  COMPLETED
+  ABANDONED
+  HUMAN_HANDOFF
+}
+
+enum ChatLanguage {
+  ES
+  EN
+}
+
+enum MessageRole {
+  CUSTOMER
+  VERA
+  SYSTEM
+}
+
+enum PropertyType {
+  RESIDENTIAL
+  COMMERCIAL
+  CONDO
+  OTHER
+}
+
+enum CustomerSource {
+  CHAT
+}
+
+enum MediaKind {
+  PHOTO
+}
+
+enum MediaUploader {
+  CUSTOMER
+  ADMIN
+}
+
+enum MeasurementSource {
+  CUSTOMER
+  VERA_EXTRACTED
+  ADMIN
+}
+
+enum ConfirmationStatus {
+  PENDING
+  CONFIRMED
+  CORRECTED
+}
+
+enum PricingUnit {
+  SQFT
+  FLAT
+  PER_ZONE
+}
+
+enum ActorType {
+  CUSTOMER
+  VERA
+  SYSTEM
+  ADMIN
+}
+
+enum ConversionBand {
+  VERY_HIGH
+  HIGH
+  MEDIUM
+  LOW
+  VERY_LOW
+}
+
+enum NextAction {
+  SCHEDULE_SITE_VISIT
+  TRUST_FIRST_FOLLOWUP
+  SEND_PRELIMINARY_ESTIMATE
+  REQUEST_MORE_PHOTOS
+  LOW_PRIORITY_FOLLOWUP
+}
+
+enum UserRole {
+  OWNER
+  ADMIN
+}
+
+// ── Platform core ────────────────────────────────────────────────────
+
+model Company {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  settings  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users     User[]
+
+  @@map("companies")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  companyId    String
+  email        String   @unique
+  name         String
+  role         UserRole @default(ADMIN)
+  passwordHash String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@index([companyId, email])
+  @@map("users")
+}
+
+// Versioned weights for the deterministic scoring engines (strategy §6).
+model ScoringConfig {
+  id        String   @id @default(uuid())
+  companyId String
+  version   Int
+  active    Boolean  @default(true)
+  config    Json
+  createdAt DateTime @default(now())
+
+  @@unique([companyId, version])
+  @@index([companyId, active])
+  @@map("scoring_configs")
+}
+
+// ── CRM ──────────────────────────────────────────────────────────────
+
+model Customer {
+  id           String         @id @default(uuid())
+  companyId    String
+  name         String?
+  phone        String? // E.164, normalized in application code
+  email        String?
+  municipality String?
+  propertyType PropertyType?
+  source       CustomerSource @default(CHAT)
+  notes        String?        @db.Text
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  leads Lead[]
+
+  @@unique([companyId, phone])
+  @@index([companyId, createdAt])
+  @@map("customers")
+}
+
+model Lead {
+  id                  String          @id @default(uuid())
+  companyId           String
+  customerId          String?
+  referenceNumber     String          @unique // VG-0042
+  serviceType         ServiceType?
+  status              LeadStatus      @default(DRAFT)
+  description         String?         @db.Text
+  requiresRemoval     Boolean?
+  hasIrrigation       Boolean?
+  budgetMinCents      Int?
+  budgetMaxCents      Int?
+  desiredDate         DateTime?
+  preferredVisitTime  String?
+  confirmedAt         DateTime?
+  adminSummary        Json?
+  // Deterministic scoring output (strategy §6/§8) — never exposed publicly.
+  leadScore           Int?
+  confidenceScore     Int?
+  conversionBand      ConversionBand?
+  suggestedNextAction NextAction?
+  scoreBreakdown      Json?
+  scoringVersion      Int?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  customer      Customer?            @relation(fields: [customerId], references: [id])
+  sessions      ChatSession[]
+  media         LeadMedia[]
+  measurements  ProjectMeasurement[]
+  confirmations LeadConfirmation[]
+  estimates     EstimateRange[]
+
+  @@index([companyId, status])
+  @@index([companyId, createdAt])
+  @@map("leads")
+}
+
+// ── Chat ─────────────────────────────────────────────────────────────
+
+model ChatSession {
+  id              String           @id @default(uuid())
+  companyId       String
+  leadId          String?
+  state           ChatSessionState @default(GREETING)
+  language        ChatLanguage     @default(ES)
+  resumeTokenHash String           @unique // SHA-256 of the 128-bit resume token
+  lastActivityAt  DateTime         @default(now())
+  expiresAt       DateTime
+  ipHash          String
+  userAgent       String?
+  closedAt        DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  lead          Lead?              @relation(fields: [leadId], references: [id])
+  messages      ChatMessage[]
+  extractions   AiExtraction[]
+  confirmations LeadConfirmation[]
+
+  @@index([companyId, state])
+  @@index([companyId, lastActivityAt])
+  @@map("chat_sessions")
+}
+
+// Append-only.
+model ChatMessage {
+  id        String      @id @default(uuid())
+  companyId String
+  sessionId String
+  role      MessageRole
+  content   String      @db.Text
+  metadata  Json?
+  createdAt DateTime    @default(now())
+
+  session     ChatSession    @relation(fields: [sessionId], references: [id])
+  extractions AiExtraction[]
+
+  @@index([companyId, sessionId, createdAt])
+  @@map("chat_messages")
+}
+
+// ── Media & measurements ─────────────────────────────────────────────
+
+model LeadMedia {
+  id         String        @id @default(uuid())
+  companyId  String
+  leadId     String
+  sessionId  String?
+  kind       MediaKind     @default(PHOTO)
+  storageKey String
+  thumbKey   String?
+  mime       String
+  sizeBytes  Int
+  width      Int?
+  height     Int?
+  uploadedBy MediaUploader @default(CUSTOMER)
+  createdAt  DateTime      @default(now())
+
+  lead Lead @relation(fields: [leadId], references: [id])
+
+  @@index([companyId, leadId])
+  @@map("lead_media")
+}
+
+model ProjectMeasurement {
+  id        String            @id @default(uuid())
+  companyId String
+  leadId    String
+  label     String
+  lengthFt  Decimal           @db.Decimal(7, 2)
+  widthFt   Decimal           @db.Decimal(7, 2)
+  areaSqFt  Decimal           @db.Decimal(10, 2) // computed in application code, never by the AI
+  source    MeasurementSource @default(CUSTOMER)
+  notes     String?           @db.Text
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  lead Lead @relation(fields: [leadId], references: [id])
+
+  @@index([companyId, leadId])
+  @@map("project_measurements")
+}
+
+// Immutable snapshot of exactly what the customer confirmed.
+model LeadConfirmation {
+  id             String             @id @default(uuid())
+  companyId      String
+  leadId         String
+  sessionId      String
+  snapshot       Json
+  status         ConfirmationStatus @default(PENDING)
+  confirmedAt    DateTime?
+  correctionNote String?            @db.Text
+  createdAt      DateTime           @default(now())
+
+  lead    Lead        @relation(fields: [leadId], references: [id])
+  session ChatSession @relation(fields: [sessionId], references: [id])
+
+  @@index([companyId, leadId])
+  @@map("lead_confirmations")
+}
+
+// ── AI audit trail (append-only) ─────────────────────────────────────
+
+model AiExtraction {
+  id              String   @id @default(uuid())
+  companyId       String
+  sessionId       String
+  messageId       String
+  model           String
+  promptVersion   String
+  rawOutput       Json
+  validatedOutput Json?
+  valid           Boolean
+  errors          Json?
+  appliedFields   Json?
+  latencyMs       Int
+  tokensIn        Int?
+  tokensOut       Int?
+  createdAt       DateTime @default(now())
+
+  session ChatSession @relation(fields: [sessionId], references: [id])
+  message ChatMessage @relation(fields: [messageId], references: [id])
+
+  @@index([companyId, sessionId, createdAt])
+  @@map("ai_extractions")
+}
+
+// ── Pricing (deterministic engine inputs/outputs) ────────────────────
+
+model PricingRule {
+  id             String      @id @default(uuid())
+  companyId      String
+  serviceType    ServiceType
+  unit           PricingUnit
+  minRateCents   Int
+  maxRateCents   Int
+  minimumJobCents Int
+  factors        Json?
+  version        Int
+  active         Boolean     @default(true)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  estimates EstimateRange[]
+
+  @@unique([companyId, serviceType, version])
+  @@index([companyId, serviceType, active])
+  @@map("pricing_rules")
+}
+
+// Append-only: recompute = new row.
+model EstimateRange {
+  id              String   @id @default(uuid())
+  companyId       String
+  leadId          String
+  pricingRuleId   String
+  ruleVersion     Int
+  inputs          Json
+  lowCents        Int
+  highCents       Int
+  disclaimerShown Boolean  @default(true)
+  createdAt       DateTime @default(now())
+
+  lead        Lead        @relation(fields: [leadId], references: [id])
+  pricingRule PricingRule @relation(fields: [pricingRuleId], references: [id])
+
+  @@index([companyId, leadId, createdAt])
+  @@map("estimate_ranges")
+}
+
+// ── Audit (append-only; no update/delete path exists in the API) ─────
+
+model AuditLog {
+  id        String    @id @default(uuid())
+  companyId String
+  actorType ActorType
+  actorId   String?
+  action    String
+  entity    String
+  entityId  String
+  data      Json?
+  createdAt DateTime  @default(now())
+
+  @@index([companyId, entity, entityId])
+  @@index([companyId, createdAt])
+  @@map("audit_logs")
+}

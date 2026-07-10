@@ -1,0 +1,35 @@
+{
+  "name": "verza-os",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Verza OS — Vera Chat MVP monorepo (Verza Garden)",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "nx run @verza/api:dev",
+    "dev:web": "nx run web:serve",
+    "build": "nx run-many -t build",
+    "test": "nx run-many -t test",
+    "lint": "nx run-many -t lint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:up": "docker compose up -d mysql",
+    "db:migrate": "npm run -w @verza/api db:migrate",
+    "db:seed": "npm run -w @verza/api db:seed",
+    "db:studio": "npm run -w @verza/api db:studio"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.9.0",
+    "eslint": "^9.9.0",
+    "eslint-config-prettier": "^9.1.0",
+    "nx": "^19.8.0",
+    "prettier": "^3.3.3",
+    "typescript": "~5.4.5",
+    "typescript-eslint": "^8.8.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

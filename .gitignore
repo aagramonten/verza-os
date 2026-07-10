@@ -1,0 +1,8 @@
+node_modules/
+dist/
+coverage/
+.nx/
+.env
+*.local
+.DS_Store
+apps/api/uploads/

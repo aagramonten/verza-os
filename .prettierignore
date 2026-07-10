@@ -1,0 +1,6 @@
+node_modules
+dist
+coverage
+.nx
+apps/web
+apps/api/prisma/migrations
