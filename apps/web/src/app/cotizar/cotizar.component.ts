@@ -1,44 +1,65 @@
-import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, inject } from '@angular/core';
+import { ChatStore } from './chat.store';
+import { ConversationHeaderComponent } from './conversation-header.component';
+import { MessageListComponent } from './message-list.component';
+import { ChatInputComponent } from './chat-input.component';
 
 /**
- * /cotizar shell — Day 1 placeholder screen. The Vera chat experience
- * (welcome, message list, uploads, confirmation) arrives on Days 8–9 of the
- * approved plan (docs/vera-chat-mvp-plan.md §5).
+ * /cotizar — Day 2 developer chat UI. Deterministic placeholder assistant;
+ * the full Vera experience (photos, measurements, confirmation) arrives on
+ * Days 8–9. Session resume: the token is kept in localStorage and the store
+ * re-hydrates the conversation on page load.
  */
 @Component({
   selector: 'app-cotizar',
   standalone: true,
+  imports: [ConversationHeaderComponent, MessageListComponent, ChatInputComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <main class="cotizar">
-      <h1>Verza Garden</h1>
-      <p>{{ message() }}</p>
+    <main class="chat-page">
+      <app-conversation-header [leadReference]="store.leadReference()" />
+      @if (store.error(); as message) {
+        <p class="error" role="alert">{{ message }}</p>
+      }
+      @if (store.restoring()) {
+        <p class="restoring">Recuperando tu conversación…</p>
+      }
+      <app-message-list [messages]="store.messages()" [showTyping]="store.sending()" />
+      <app-chat-input [disabled]="!store.canSend()" (send)="store.send($event)" />
     </main>
   `,
   styles: `
-    .cotizar {
-      min-height: 100dvh;
+    .chat-page {
       display: flex;
       flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 12px;
+      height: 100dvh;
+      max-width: 640px;
+      margin: 0 auto;
       background: #ede8de;
+      font-family: 'Helvetica Neue', Arial, sans-serif;
       color: #2e2013;
-      font-family: Georgia, 'Times New Roman', serif;
+    }
+    .error {
+      margin: 0;
+      padding: 8px 16px;
+      background: #8c2f28;
+      color: #fff;
+      font-size: 0.85rem;
       text-align: center;
-      padding: 24px;
     }
-    h1 {
-      font-weight: 700;
-      letter-spacing: 0.02em;
-    }
-    p {
-      color: #5c6b3a;
-      font-size: 1.1rem;
+    .restoring {
+      margin: 0;
+      padding: 8px 16px;
+      font-size: 0.85rem;
+      text-align: center;
+      color: #6b5d44;
     }
   `,
 })
-export class CotizarComponent {
-  readonly message = signal('Vera próximamente — tu asistente para cotizar tu jardín.');
+export class CotizarComponent implements OnInit {
+  protected readonly store = inject(ChatStore);
+
+  ngOnInit(): void {
+    void this.store.init();
+  }
 }

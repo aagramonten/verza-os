@@ -5,11 +5,13 @@ import pino, { type Logger } from 'pino';
 import type { PrismaClient } from '@prisma/client';
 import type { Env } from './config/env.js';
 import { errorHandler, notFoundHandler } from './shared/http/problem.js';
+import { createChatModule, type ChatModuleOverrides } from './modules/chat/index.js';
 
 export interface AppDependencies {
   env: Env;
   prisma: PrismaClient;
   logger?: Logger;
+  chatOverrides?: ChatModuleOverrides;
 }
 
 export const API_VERSION = '0.1.0';
@@ -25,12 +27,16 @@ interface HealthResponse {
  * Express app factory. All dependencies are injected so tests can construct
  * the app against their own database and configuration.
  */
-export function buildApp({ env, prisma, logger }: AppDependencies): Express {
+export function buildApp({ env, prisma, logger, chatOverrides }: AppDependencies): Express {
   const log =
     logger ??
     pino({
       level: env.NODE_ENV === 'test' ? 'silent' : 'info',
-      redact: { paths: ['req.headers.authorization', 'req.headers.cookie'], remove: true },
+      redact: {
+        // Raw resume tokens must never reach the logs (Day 2 spec).
+        paths: ['req.headers.authorization', 'req.headers.cookie', 'req.headers["x-resume-token"]'],
+        remove: true,
+      },
     });
 
   const app = express();
@@ -62,6 +68,9 @@ export function buildApp({ env, prisma, logger }: AppDependencies): Express {
     };
     res.status(database === 'connected' ? 200 : 503).json(body);
   });
+
+  const chat = createChatModule(env, prisma, chatOverrides ?? {});
+  app.use('/api/v1/public/chat', chat.router);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

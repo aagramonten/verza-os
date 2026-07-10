@@ -29,6 +29,7 @@ const envSchema = z
     AI_PROVIDER_API_KEY: z.string().default(''),
     AI_MODEL: z.string().default(''),
     RATE_LIMIT_PUBLIC_RPM: z.coerce.number().int().positive().default(30),
+    RESUME_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(30),
   })
   .superRefine((env, ctx) => {
     if (env.AI_ENABLED) {

@@ -34,17 +34,14 @@ enum LeadStatus {
 }
 
 enum ChatSessionState {
-  GREETING
-  COLLECTING_SERVICE
-  COLLECTING_DETAILS
+  STARTED
+  COLLECTING_CONTACT
+  COLLECTING_PROJECT
   COLLECTING_MEDIA
-  COLLECTING_MEASURES
-  ESTIMATE_OFFERED
-  SUMMARY_SHOWN
+  COLLECTING_MEASUREMENTS
+  READY_FOR_CONFIRMATION
   CONFIRMED
-  COMPLETED
   ABANDONED
-  HUMAN_HANDOFF
 }
 
 enum ChatLanguage {
@@ -232,19 +229,20 @@ model Lead {
 // ── Chat ─────────────────────────────────────────────────────────────
 
 model ChatSession {
-  id              String           @id @default(uuid())
-  companyId       String
-  leadId          String?
-  state           ChatSessionState @default(GREETING)
-  language        ChatLanguage     @default(ES)
-  resumeTokenHash String           @unique // SHA-256 of the 128-bit resume token
-  lastActivityAt  DateTime         @default(now())
-  expiresAt       DateTime
-  ipHash          String
-  userAgent       String?
-  closedAt        DateTime?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  id                  String           @id @default(uuid())
+  companyId           String
+  leadId              String?
+  state               ChatSessionState @default(STARTED)
+  language            ChatLanguage     @default(ES)
+  resumeTokenHash     String           @unique // SHA-256 of the 256-bit resume token; raw token is never stored
+  resumeTokenRevokedAt DateTime?
+  lastActivityAt      DateTime         @default(now())
+  expiresAt           DateTime
+  ipHash              String
+  userAgent           String?
+  closedAt            DateTime?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
 
   lead          Lead?              @relation(fields: [leadId], references: [id])
   messages      ChatMessage[]

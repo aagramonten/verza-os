@@ -4,7 +4,10 @@ import { createPrismaClient } from './shared/prisma.js';
 import { buildApp } from './app.js';
 
 const logger = pino({
-  redact: { paths: ['req.headers.authorization', 'req.headers.cookie'], remove: true },
+  redact: {
+    paths: ['req.headers.authorization', 'req.headers.cookie', 'req.headers["x-resume-token"]'],
+    remove: true,
+  },
 });
 
 async function main(): Promise<void> {

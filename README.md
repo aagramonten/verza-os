@@ -30,7 +30,25 @@ npm run dev:web              # Angular on http://localhost:4200
 npm test                     # vitest (requires MySQL up)
 ```
 
+## Try the chat (Day 2)
+
+With both servers running, open **http://localhost:4200/cotizar**: type a
+message, Vera (deterministic placeholder — AI arrives Day 3) answers, and the
+conversation survives a browser refresh.
+
+- The API issues an opaque **resume token** at session creation; the web app
+  stores `{ sessionId, resumeToken }` in `localStorage` under
+  `vg_chat_session` and calls `POST /sessions/:id/resume` on page load.
+- Only the SHA-256 of the token is stored server-side; tokens expire after
+  `RESUME_TOKEN_TTL_DAYS` (30) and can be revoked.
+- Public endpoints are rate limited per IP (`RATE_LIMIT_PUBLIC_RPM`) —
+  in-memory, single-instance only for the MVP.
+- Full endpoint reference + curl examples:
+  [apps/api/src/modules/chat/README.md](apps/api/src/modules/chat/README.md).
+
 ## Status
 
-Day 1 complete: workspace, schema + first migration, seed, env validation,
-health endpoint, tests. Day 2 (chat sessions + state machine) not started.
+Day 2 complete: public chat sessions (create/message/get/resume/status),
+enforced state machine, hashed resume tokens with expiry+revocation, in-memory
+rate limiting, audit events, and the /cotizar developer chat UI. Day 3 (AI
+provider + structured output) not started.
