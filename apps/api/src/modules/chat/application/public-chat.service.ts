@@ -1,12 +1,16 @@
+import type { ChatSessionState } from '@verza/shared';
 import type { AuditLogService } from '../../../shared/audit/audit-log.service.js';
 import { sanitizeChatMessage } from '../../../shared/text/sanitize.js';
 import type { ChatSession } from '../domain/chat-session.js';
 import {
   ChatSessionNotFoundError,
+  ConfirmationNotAvailableError,
   InvalidResumeTokenError,
   SessionClosedError,
 } from '../domain/errors.js';
 import { chatStateMachine } from '../domain/state-machine.js';
+import { confirmAllPresent } from './merge-policy.js';
+import { buildSummary, type ConfirmationSummary } from './summary.js';
 import type {
   PublicMessagesCreatedDto,
   PublicSessionCreatedDto,
@@ -15,11 +19,12 @@ import type {
 } from './dto.js';
 import { toPublicMessage, toPublicSession } from './dto.js';
 import type {
-  AssistantResponder,
+  ChatLeadDataRepository,
   ChatLeadRepository,
   ChatMessageRepository,
   ChatSessionRepository,
   Clock,
+  ConversationEngine,
 } from './ports.js';
 import type { ResumeTokenService } from './resume-token.service.js';
 
@@ -27,17 +32,25 @@ export interface PublicChatServiceDeps {
   sessions: ChatSessionRepository;
   messages: ChatMessageRepository;
   leads: ChatLeadRepository;
+  leadData: ChatLeadDataRepository;
   tokens: ResumeTokenService;
-  assistant: AssistantResponder;
+  engine: ConversationEngine;
   audit: AuditLogService;
   clock: Clock;
   resumeTokenTtlDays: number;
 }
 
+const CONFIRM_CLOSING =
+  'Excelente. Ya recibimos la información de tu proyecto. El equipo de Verza Garden revisará las ' +
+  'fotos y los detalles para coordinar el próximo paso.';
+
+const CORRECTION_PROMPT = 'Claro. Dime qué te gustaría ajustar y lo actualizo.';
+
 /**
- * Application service for the public chat endpoints. Controllers delegate
- * here and contain no business logic. Audit metadata never includes message
- * contents, raw tokens, or PII (plan §8 / Day 2 spec).
+ * Application service for the public chat endpoints. Controllers delegate here
+ * and contain no business logic. The conversation engine produces the reply
+ * and a target phase; this service is the sole authority that walks the state
+ * machine (never skipping) and persists the assistant message.
  */
 export class PublicChatService {
   constructor(private readonly deps: PublicChatServiceDeps) {}
@@ -84,7 +97,7 @@ export class PublicChatService {
     rawToken: string,
     rawMessage: string,
   ): Promise<PublicMessagesCreatedDto> {
-    const { sessions, messages, assistant, audit } = this.deps;
+    const { messages, engine, audit } = this.deps;
     const session = await this.authorize(sessionId, rawToken);
 
     if (!chatStateMachine.isActive(session.state)) {
@@ -101,22 +114,18 @@ export class PublicChatService {
       data: { sessionId: session.id, length: content.length },
     });
 
-    const customerMessageCount = await this.countCustomerMessages(session.id);
-    const turn = assistant.respond({ state: session.state, customerMessageCount });
+    const history = await messages.listAscending(session.id);
+    const photoCount = await this.deps.leadData.countPhotos(session.leadId);
 
-    let state = session.state;
-    if (turn.nextState !== null && turn.nextState !== state) {
-      chatStateMachine.assertTransition(state, turn.nextState);
-      await sessions.updateState(session.id, turn.nextState);
-      await audit.record({
-        actorType: 'VERA',
-        action: 'chat.state.changed',
-        entity: 'chat_session',
-        entityId: session.id,
-        data: { from: state, to: turn.nextState },
-      });
-      state = turn.nextState;
-    }
+    const turn = await engine.handle({
+      session,
+      customerMessageId: customerMessage.id,
+      latestCustomerMessage: content,
+      history: history.map((m) => ({ role: m.role, content: m.content })),
+      photoCount,
+    });
+
+    const state = await this.walkTo(session, turn.targetState);
 
     const assistantMessage = await messages.append(session.id, 'VERA', turn.reply);
     await audit.record({
@@ -124,25 +133,76 @@ export class PublicChatService {
       action: 'chat.message.assistant_created',
       entity: 'chat_message',
       entityId: assistantMessage.id,
-      data: { sessionId: session.id },
+      data: { sessionId: session.id, reviewFlagged: turn.reviewFlagged },
     });
-    await sessions.touch(session.id, this.deps.clock.now());
+    await this.deps.sessions.touch(session.id, this.deps.clock.now());
 
     return {
       messages: [toPublicMessage(customerMessage), toPublicMessage(assistantMessage)],
       state,
+      summary: turn.summary,
     };
+  }
+
+  async confirmSummary(sessionId: string, rawToken: string): Promise<PublicMessagesCreatedDto> {
+    const { messages, audit, clock, leadData } = this.deps;
+    const session = await this.authorize(sessionId, rawToken);
+    if (session.state !== 'READY_FOR_CONFIRMATION') {
+      throw new ConfirmationNotAvailableError(session.id);
+    }
+
+    // Lock the collected fields and snapshot the summary for human review.
+    const collected = await leadData.loadCollected(session.leadId);
+    const photoCount = await leadData.countPhotos(session.leadId);
+    const summary = buildSummary(collected, photoCount);
+    await leadData.saveCollected(session.leadId, confirmAllPresent(collected));
+    await leadData.markReadyForReview(session.leadId, summary, clock.now());
+
+    const state = await this.transitionOnce(session, 'CONFIRMED');
+    const closing = await messages.append(session.id, 'VERA', CONFIRM_CLOSING);
+    await audit.record({
+      actorType: 'CUSTOMER',
+      action: 'chat.session.confirmed',
+      entity: 'chat_session',
+      entityId: session.id,
+      data: { leadReference: session.leadReference },
+    });
+    await this.deps.sessions.touch(session.id, clock.now());
+
+    return { messages: [toPublicMessage(closing)], state, summary };
+  }
+
+  async correctSummary(sessionId: string, rawToken: string): Promise<PublicMessagesCreatedDto> {
+    const { messages, audit, clock } = this.deps;
+    const session = await this.authorize(sessionId, rawToken);
+    if (session.state !== 'READY_FOR_CONFIRMATION') {
+      throw new ConfirmationNotAvailableError(session.id);
+    }
+
+    const state = await this.transitionOnce(session, 'COLLECTING_PROJECT');
+    const prompt = await messages.append(session.id, 'VERA', CORRECTION_PROMPT);
+    await audit.record({
+      actorType: 'CUSTOMER',
+      action: 'chat.summary.correction_requested',
+      entity: 'chat_session',
+      entityId: session.id,
+    });
+    await this.deps.sessions.touch(session.id, clock.now());
+
+    return { messages: [toPublicMessage(prompt)], state, summary: null };
   }
 
   async getSession(sessionId: string, rawToken: string): Promise<PublicSessionDto> {
     const session = await this.authorize(sessionId, rawToken);
     const messages = await this.deps.messages.listAscending(session.id);
-    return toPublicSession(session, messages);
+    const summary = await this.summaryIfReady(session);
+    return toPublicSession(session, messages, summary);
   }
 
   async resumeSession(sessionId: string, rawToken: string): Promise<PublicSessionDto> {
     const session = await this.authorize(sessionId, rawToken);
     const messages = await this.deps.messages.listAscending(session.id);
+    const summary = await this.summaryIfReady(session);
     await this.deps.sessions.touch(session.id, this.deps.clock.now());
     await this.deps.audit.record({
       actorType: 'CUSTOMER',
@@ -151,7 +211,7 @@ export class PublicChatService {
       entityId: session.id,
       data: { state: session.state },
     });
-    return toPublicSession(session, messages);
+    return toPublicSession(session, messages, summary);
   }
 
   async getStatus(sessionId: string, rawToken: string): Promise<PublicStatusDto> {
@@ -165,11 +225,54 @@ export class PublicChatService {
     };
   }
 
-  /**
-   * Resolves the session and verifies the resume token (existence, hash
-   * match, expiry, revocation). Failures audit `chat.resume.invalid_attempt`
-   * without the raw token and surface as a single opaque error type.
-   */
+  /** Walk the state machine forward to `target`, auditing each single step. */
+  private async walkTo(session: ChatSession, target: ChatSessionState): Promise<ChatSessionState> {
+    const path = chatStateMachine.forwardPath(session.state, target);
+    if (path === null || path.length === 0) {
+      return session.state;
+    }
+    let from = session.state;
+    for (const to of path) {
+      chatStateMachine.assertTransition(from, to);
+      await this.deps.sessions.updateState(session.id, to);
+      await this.deps.audit.record({
+        actorType: 'VERA',
+        action: 'chat.state.changed',
+        entity: 'chat_session',
+        entityId: session.id,
+        data: { from, to },
+      });
+      from = to;
+    }
+    return from;
+  }
+
+  /** Apply a single explicit transition (confirm → CONFIRMED, correct → COLLECTING_PROJECT). */
+  private async transitionOnce(
+    session: ChatSession,
+    to: ChatSessionState,
+  ): Promise<ChatSessionState> {
+    chatStateMachine.assertTransition(session.state, to);
+    await this.deps.sessions.updateState(session.id, to);
+    await this.deps.audit.record({
+      actorType: 'CUSTOMER',
+      action: 'chat.state.changed',
+      entity: 'chat_session',
+      entityId: session.id,
+      data: { from: session.state, to },
+    });
+    return to;
+  }
+
+  private async summaryIfReady(session: ChatSession): Promise<ConfirmationSummary | null> {
+    if (session.state !== 'READY_FOR_CONFIRMATION' && session.state !== 'CONFIRMED') {
+      return null;
+    }
+    const collected = await this.deps.leadData.loadCollected(session.leadId);
+    const photoCount = await this.deps.leadData.countPhotos(session.leadId);
+    return buildSummary(collected, photoCount);
+  }
+
   private async authorize(sessionId: string, rawToken: string): Promise<ChatSession> {
     const { sessions, tokens, audit, clock } = this.deps;
 
@@ -200,10 +303,5 @@ export class PublicChatService {
     }
 
     return session;
-  }
-
-  private async countCustomerMessages(sessionId: string): Promise<number> {
-    const all = await this.deps.messages.listAscending(sessionId);
-    return all.filter((m) => m.role === 'CUSTOMER').length;
   }
 }

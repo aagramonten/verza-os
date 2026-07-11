@@ -25,3 +25,11 @@ export class SessionClosedError extends Error {
     this.name = 'SessionClosedError';
   }
 }
+
+/** Raised when confirm/correct is called but the session is not awaiting confirmation. */
+export class ConfirmationNotAvailableError extends Error {
+  constructor(public readonly sessionId: string) {
+    super('This session is not ready for confirmation');
+    this.name = 'ConfirmationNotAvailableError';
+  }
+}

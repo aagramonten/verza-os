@@ -3,17 +3,24 @@ import { ChatStore } from './chat.store';
 import { ConversationHeaderComponent } from './conversation-header.component';
 import { MessageListComponent } from './message-list.component';
 import { ChatInputComponent } from './chat-input.component';
+import { SummaryCardComponent } from './summary-card.component';
+import { QuickActionsComponent } from './quick-actions.component';
 
 /**
- * /cotizar — Day 2 developer chat UI. Deterministic placeholder assistant;
- * the full Vera experience (photos, measurements, confirmation) arrives on
- * Days 8–9. Session resume: the token is kept in localStorage and the store
- * re-hydrates the conversation on page load.
+ * /cotizar — Vera chat (Day 3). AI-generated replies, structured extraction,
+ * a confirmation summary card with Confirm/Correct, quick actions, and a
+ * success state. Session resume persists across refresh via localStorage.
  */
 @Component({
   selector: 'app-cotizar',
   standalone: true,
-  imports: [ConversationHeaderComponent, MessageListComponent, ChatInputComponent],
+  imports: [
+    ConversationHeaderComponent,
+    MessageListComponent,
+    ChatInputComponent,
+    SummaryCardComponent,
+    QuickActionsComponent,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <main class="chat-page">
@@ -24,8 +31,28 @@ import { ChatInputComponent } from './chat-input.component';
       @if (store.restoring()) {
         <p class="restoring">Recuperando tu conversación…</p>
       }
+
       <app-message-list [messages]="store.messages()" [showTyping]="store.sending()" />
-      <app-chat-input [disabled]="!store.canSend()" (send)="store.send($event)" />
+
+      @if (store.awaitingConfirmation() && store.summary(); as summary) {
+        <app-summary-card
+          [summary]="summary"
+          [busy]="store.sending()"
+          (confirm)="store.confirm()"
+          (correct)="store.correct()"
+        />
+      }
+
+      @if (store.confirmed()) {
+        <p class="done">✅ ¡Gracias! Tu información quedó registrada. El equipo de Verza Garden te contactará.</p>
+      } @else if (!store.awaitingConfirmation()) {
+        <app-quick-actions
+          [disabled]="!store.canSend()"
+          (requestVisit)="store.requestVisit()"
+          (skipMeasurements)="store.skipMeasurements()"
+        />
+        <app-chat-input [disabled]="!store.canSend()" (send)="store.send($event)" />
+      }
     </main>
   `,
   styles: `
@@ -53,6 +80,14 @@ import { ChatInputComponent } from './chat-input.component';
       font-size: 0.85rem;
       text-align: center;
       color: #6b5d44;
+    }
+    .done {
+      margin: 0;
+      padding: 18px 16px;
+      background: #5c6b3a;
+      color: #fff;
+      font-size: 0.95rem;
+      text-align: center;
     }
   `,
 })

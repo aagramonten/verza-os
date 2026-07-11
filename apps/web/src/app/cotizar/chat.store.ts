@@ -2,6 +2,7 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import {
   ChatApiService,
   type ChatState,
+  type ConfirmationSummary,
   type PublicMessage,
 } from './chat-api.service';
 
@@ -30,12 +31,15 @@ export class ChatStore {
   readonly messages = signal<UiMessage[]>([]);
   readonly state = signal<ChatState | null>(null);
   readonly leadReference = signal<string | null>(null);
+  readonly summary = signal<ConfirmationSummary | null>(null);
   readonly sending = signal(false);
   readonly restoring = signal(false);
   readonly error = signal<string | null>(null);
 
+  readonly confirmed = computed(() => this.state() === 'CONFIRMED');
+  readonly awaitingConfirmation = computed(() => this.state() === 'READY_FOR_CONFIRMATION');
   readonly canSend = computed(
-    () => !this.sending() && !this.restoring() && this.state() !== 'CONFIRMED',
+    () => !this.sending() && !this.restoring() && !this.confirmed() && !this.awaitingConfirmation(),
   );
 
   async init(): Promise<void> {
@@ -49,6 +53,7 @@ export class ChatStore {
       this.messages.set(session.messages);
       this.state.set(session.state);
       this.leadReference.set(session.leadReference);
+      this.summary.set(session.summary);
     } catch {
       // Token no longer valid: forget it and start a fresh conversation lazily.
       localStorage.removeItem(STORAGE_KEY);
@@ -83,9 +88,51 @@ export class ChatStore {
         ...result.messages,
       ]);
       this.state.set(result.state);
+      this.summary.set(result.summary);
     } catch {
       this.messages.update((all) => all.filter((m) => m.id !== optimistic.id));
       this.error.set('No pudimos enviar tu mensaje. Intenta de nuevo.');
+    } finally {
+      this.sending.set(false);
+    }
+  }
+
+  /** Quick actions send a canned message so Vera handles them naturally. */
+  requestVisit(): Promise<void> {
+    return this.send('Me gustaría coordinar una visita al lugar.');
+  }
+
+  skipMeasurements(): Promise<void> {
+    return this.send('No tengo las medidas exactas, prefiero que las verifiquen en la visita.');
+  }
+
+  async confirm(): Promise<void> {
+    const stored = this.readStored();
+    if (stored === null || this.sending()) return;
+    this.sending.set(true);
+    try {
+      const result = await this.api.confirm(stored.sessionId, stored.resumeToken);
+      this.messages.update((all) => [...all, ...result.messages]);
+      this.state.set(result.state);
+      this.summary.set(null);
+    } catch {
+      this.error.set('No pudimos confirmar. Intenta de nuevo.');
+    } finally {
+      this.sending.set(false);
+    }
+  }
+
+  async correct(): Promise<void> {
+    const stored = this.readStored();
+    if (stored === null || this.sending()) return;
+    this.sending.set(true);
+    try {
+      const result = await this.api.correct(stored.sessionId, stored.resumeToken);
+      this.messages.update((all) => [...all, ...result.messages]);
+      this.state.set(result.state);
+      this.summary.set(null);
+    } catch {
+      this.error.set('No pudimos procesar el cambio. Intenta de nuevo.');
     } finally {
       this.sending.set(false);
     }

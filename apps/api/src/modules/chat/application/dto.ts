@@ -1,5 +1,6 @@
 import type { ChatSessionState } from '@verza/shared';
 import type { ChatMessage, ChatSession } from '../domain/chat-session.js';
+import type { ConfirmationSummary } from './summary.js';
 
 /**
  * Public DTOs — the ONLY shapes that leave the API on public chat endpoints.
@@ -20,6 +21,7 @@ export interface PublicSessionDto {
   leadReference: string;
   state: ChatSessionState;
   messages: PublicMessageDto[];
+  summary: ConfirmationSummary | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -42,6 +44,7 @@ export interface PublicStatusDto {
 export interface PublicMessagesCreatedDto {
   messages: PublicMessageDto[];
   state: ChatSessionState;
+  summary: ConfirmationSummary | null;
 }
 
 export function toPublicMessage(message: ChatMessage): PublicMessageDto {
@@ -54,12 +57,17 @@ export function toPublicMessage(message: ChatMessage): PublicMessageDto {
   };
 }
 
-export function toPublicSession(session: ChatSession, messages: ChatMessage[]): PublicSessionDto {
+export function toPublicSession(
+  session: ChatSession,
+  messages: ChatMessage[],
+  summary: ConfirmationSummary | null = null,
+): PublicSessionDto {
   return {
     sessionId: session.id,
     leadReference: session.leadReference,
     state: session.state,
     messages: messages.filter((m) => m.role !== 'SYSTEM').map(toPublicMessage),
+    summary,
     createdAt: session.createdAt.toISOString(),
     updatedAt: session.updatedAt.toISOString(),
   };

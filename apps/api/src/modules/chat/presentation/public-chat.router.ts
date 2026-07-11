@@ -5,6 +5,7 @@ import { HttpError } from '../../../shared/http/problem.js';
 import { MessageRejectedError } from '../../../shared/text/sanitize.js';
 import {
   ChatSessionNotFoundError,
+  ConfirmationNotAvailableError,
   InvalidResumeTokenError,
   SessionClosedError,
 } from '../domain/errors.js';
@@ -38,11 +39,11 @@ const RESUME_TOKEN_HEADER = 'x-resume-token';
 export function createPublicChatRouter(deps: PublicChatRouterDeps): Router {
   const router = Router();
 
-  router.use((req: Request, res: Response, next: NextFunction) => {
+  router.use(async (req: Request, res: Response, next: NextFunction) => {
     const ip = req.ip ?? 'unknown';
     const verdict = deps.rateLimiter.hit(ip);
     if (!verdict.allowed) {
-      void deps.audit.record({
+      await deps.audit.record({
         actorType: 'SYSTEM',
         action: 'chat.rate_limit.exceeded',
         entity: 'chat_session',
@@ -108,6 +109,26 @@ export function createPublicChatRouter(deps: PublicChatRouterDeps): Router {
     }
   });
 
+  router.post('/sessions/:sessionId/confirm', async (req, res, next) => {
+    try {
+      const sessionId = sessionIdSchema.parse(req.params['sessionId']);
+      const token = requireToken(req);
+      res.status(201).json(await deps.service.confirmSummary(sessionId, token));
+    } catch (error) {
+      next(mapError(error));
+    }
+  });
+
+  router.post('/sessions/:sessionId/correct', async (req, res, next) => {
+    try {
+      const sessionId = sessionIdSchema.parse(req.params['sessionId']);
+      const token = requireToken(req);
+      res.status(201).json(await deps.service.correctSummary(sessionId, token));
+    } catch (error) {
+      next(mapError(error));
+    }
+  });
+
   router.get('/sessions/:sessionId/status', async (req, res, next) => {
     try {
       const sessionId = sessionIdSchema.parse(req.params['sessionId']);
@@ -143,6 +164,9 @@ function mapError(error: unknown): unknown {
   }
   if (error instanceof SessionClosedError) {
     return new HttpError(409, 'Conflict', 'This conversation is closed');
+  }
+  if (error instanceof ConfirmationNotAvailableError) {
+    return new HttpError(409, 'Conflict', 'This session is not ready for confirmation');
   }
   if (error instanceof InvalidStateTransitionError) {
     return new HttpError(409, 'Conflict', 'The requested state change is not allowed');

@@ -46,9 +46,33 @@ conversation survives a browser refresh.
 - Full endpoint reference + curl examples:
   [apps/api/src/modules/chat/README.md](apps/api/src/modules/chat/README.md).
 
+## Vera AI (Day 3)
+
+Vera is the conversational intelligence behind `/cotizar`. She interprets
+messages, extracts structured project data (validated by Zod), detects
+buying/hesitation signals and contradictions, and recommends the next step —
+but the **server** is the authority: the AI never writes the database, never
+chooses the conversation state, and never confirms a lead or touches
+quotations. All numbers (square footage, money, dates, phones) are validated in
+application code, and confirmed fields can never be overwritten.
+
+Enable a real provider (any OpenAI-compatible `/chat/completions` endpoint):
+
+```env
+AI_ENABLED=true
+AI_PROVIDER_BASE_URL=https://api.openai.com/v1   # or Groq, a gateway, etc.
+AI_PROVIDER_API_KEY=sk-...
+AI_MODEL=gpt-4o-mini
+```
+
+With `AI_ENABLED=false` (default) the app runs fully on a deterministic
+placeholder engine — no credentials required. Details + the structured output
+contract and merge policy: [apps/api/src/modules/chat/README.md](apps/api/src/modules/chat/README.md).
+
 ## Status
 
-Day 2 complete: public chat sessions (create/message/get/resume/status),
-enforced state machine, hashed resume tokens with expiry+revocation, in-memory
-rate limiting, audit events, and the /cotizar developer chat UI. Day 3 (AI
-provider + structured output) not started.
+Day 3 complete: Vera orchestrator (LLM provider abstraction, Zod-validated
+structured output, prompt-injection defenses, merge/contradiction policy,
+extraction audit, server-authoritative state, confirmation summary + confirm/
+correct), plus the updated /cotizar UI (summary card, quick actions, success
+state). Day 4 not started.

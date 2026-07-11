@@ -204,6 +204,10 @@ model Lead {
   preferredVisitTime  String?
   confirmedAt         DateTime?
   adminSummary        Json?
+  // Working merge store for the Vera conversation (Day 3): validated field
+  // values plus the set of customer-confirmed field names. Authoritative for
+  // merge decisions and summary generation; typed columns above mirror it.
+  collectedData       Json?
   // Deterministic scoring output (strategy §6/§8) — never exposed publicly.
   leadScore           Int?
   confidenceScore     Int?

@@ -29,6 +29,20 @@ const ACTIVE_STATES: readonly ChatSessionState[] = [
   'READY_FOR_CONFIRMATION',
 ];
 
+/**
+ * The linear collecting chain. Advancing multiple phases in one turn is done
+ * by walking this chain one valid step at a time — never by skipping. CONFIRMED
+ * and ABANDONED are off-chain and only reachable through their explicit edges.
+ */
+const LINEAR_CHAIN: readonly ChatSessionState[] = [
+  'STARTED',
+  'COLLECTING_CONTACT',
+  'COLLECTING_PROJECT',
+  'COLLECTING_MEDIA',
+  'COLLECTING_MEASUREMENTS',
+  'READY_FOR_CONFIRMATION',
+];
+
 export class InvalidStateTransitionError extends Error {
   constructor(
     public readonly from: ChatSessionState,
@@ -57,5 +71,23 @@ export const chatStateMachine = {
 
   isTerminal(state: ChatSessionState): boolean {
     return TRANSITIONS[state].length === 0;
+  },
+
+  /**
+   * Ordered list of intermediate states to walk forward from `from` to `to`
+   * along the linear chain (each element is a single valid transition).
+   * Returns [] when already at/ahead of the target, or null when `to` is not
+   * forward-reachable on the chain.
+   */
+  forwardPath(from: ChatSessionState, to: ChatSessionState): ChatSessionState[] | null {
+    const fromIndex = LINEAR_CHAIN.indexOf(from);
+    const toIndex = LINEAR_CHAIN.indexOf(to);
+    if (fromIndex === -1 || toIndex === -1) {
+      return null;
+    }
+    if (toIndex <= fromIndex) {
+      return [];
+    }
+    return LINEAR_CHAIN.slice(fromIndex + 1, toIndex + 1);
   },
 } as const;
