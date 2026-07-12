@@ -150,8 +150,9 @@ export async function seed(prisma: PrismaClient): Promise<void> {
   }
 }
 
-// Allow `npm run db:seed` / `prisma db seed` execution.
-const isDirectRun = process.argv[1]?.endsWith('seed.ts') === true;
+// Allow `npm run db:seed` (seed.ts via tsx) and the bundled `node dist/seed.js`
+// to self-execute, while `import { seed }` from tests does not.
+const isDirectRun = /seed\.(ts|js)$/.test(process.argv[1] ?? '');
 if (isDirectRun) {
   const prisma = new PrismaClient();
   seed(prisma)
