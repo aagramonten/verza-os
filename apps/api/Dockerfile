@@ -5,6 +5,11 @@ FROM node:20-slim AS build
 WORKDIR /workspace
 ENV CI=true
 
+# OpenSSL is needed so `prisma generate` detects the right engine target.
+RUN apt-get update -y \
+  && apt-get install -y --no-install-recommends openssl \
+  && rm -rf /var/lib/apt/lists/*
+
 COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/
 COPY packages/shared/package.json packages/shared/
