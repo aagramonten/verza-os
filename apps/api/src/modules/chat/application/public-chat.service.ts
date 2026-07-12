@@ -27,6 +27,14 @@ import type {
   ConversationEngine,
 } from './ports.js';
 import type { ResumeTokenService } from './resume-token.service.js';
+import {
+  QUICK_ACTION_MESSAGES,
+  type QuickActionEvent,
+} from './quick-action.js';
+import type {
+  MediaUploadService,
+  UploadedFile,
+} from '../../media/application/media-upload.service.js';
 
 export interface PublicChatServiceDeps {
   sessions: ChatSessionRepository;
@@ -35,6 +43,7 @@ export interface PublicChatServiceDeps {
   leadData: ChatLeadDataRepository;
   tokens: ResumeTokenService;
   engine: ConversationEngine;
+  media: MediaUploadService;
   audit: AuditLogService;
   clock: Clock;
   resumeTokenTtlDays: number;
@@ -97,6 +106,23 @@ export class PublicChatService {
     rawToken: string,
     rawMessage: string,
   ): Promise<PublicMessagesCreatedDto> {
+    return this.processCustomerTurn(sessionId, rawToken, rawMessage, null);
+  }
+
+  async appendQuickAction(
+    sessionId: string,
+    rawToken: string,
+    event: QuickActionEvent,
+  ): Promise<PublicMessagesCreatedDto> {
+    return this.processCustomerTurn(sessionId, rawToken, QUICK_ACTION_MESSAGES[event], event);
+  }
+
+  private async processCustomerTurn(
+    sessionId: string,
+    rawToken: string,
+    rawMessage: string,
+    quickActionEvent: QuickActionEvent | null,
+  ): Promise<PublicMessagesCreatedDto> {
     const { messages, engine, audit } = this.deps;
     const session = await this.authorize(sessionId, rawToken);
 
@@ -111,7 +137,7 @@ export class PublicChatService {
       action: 'chat.message.customer_created',
       entity: 'chat_message',
       entityId: customerMessage.id,
-      data: { sessionId: session.id, length: content.length },
+      data: { sessionId: session.id, length: content.length, quickActionEvent },
     });
 
     const history = await messages.listAscending(session.id);
@@ -123,6 +149,7 @@ export class PublicChatService {
       latestCustomerMessage: content,
       history: history.map((m) => ({ role: m.role, content: m.content })),
       photoCount,
+      quickActionEvent,
     });
 
     const state = await this.walkTo(session, turn.targetState);
@@ -142,6 +169,27 @@ export class PublicChatService {
       state,
       summary: turn.summary,
     };
+  }
+
+  async uploadPhoto(
+    sessionId: string,
+    rawToken: string,
+    file: UploadedFile,
+  ): Promise<{ mediaId: string; photoCount: number }> {
+    const session = await this.authorize(sessionId, rawToken);
+    if (!chatStateMachine.isActive(session.state)) {
+      throw new SessionClosedError(session.id);
+    }
+    const result = await this.deps.media.store({ leadId: session.leadId, sessionId: session.id, file });
+    await this.deps.audit.record({
+      actorType: 'CUSTOMER',
+      action: 'chat.media.uploaded',
+      entity: 'lead_media',
+      entityId: result.mediaId,
+      data: { sessionId: session.id, photoCount: result.photoCount, sizeBytes: file.size },
+    });
+    await this.deps.sessions.touch(session.id, this.deps.clock.now());
+    return result;
   }
 
   async confirmSummary(sessionId: string, rawToken: string): Promise<PublicMessagesCreatedDto> {

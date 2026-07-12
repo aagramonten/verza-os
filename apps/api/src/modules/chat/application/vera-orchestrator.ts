@@ -4,13 +4,15 @@ import {
   parseAiTurn,
   VERA_PROMPT_VERSION,
   type LlmProvider,
+  type KnowledgeService,
 } from '../../ai/index.js';
 import { LlmUnavailableError } from '../../ai/application/llm-provider.port.js';
 import type { AiServiceType, AiTurn } from '../../ai/application/ai-turn.schema.js';
-import { SERVICE_PRIORITIES } from '../../ai/application/knowledge.js';
-import { hasMeasurements, hasValue, type CollectedProjectState } from './collected-project.js';
+import { hasMeasurements, type CollectedProjectState } from './collected-project.js';
+import { planConversation } from './conversation-planner.js';
 import { normalizeExtraction } from './extraction-normalizer.js';
 import { mergeExtraction } from './merge-policy.js';
+import { quickActionFieldHints } from './quick-action.js';
 import {
   isAiServiceType,
   serviceLabelEs,
@@ -44,6 +46,7 @@ export interface VeraOrchestratorDeps {
   extractions: ChatExtractionRepository;
   audit: AuditLogService;
   clock: Clock;
+  knowledge: KnowledgeService;
 }
 
 /**
@@ -57,21 +60,37 @@ export class VeraOrchestrator implements ConversationEngine {
 
   async handle(ctx: ConversationContext): Promise<ConversationTurn> {
     const collected = await this.deps.leadData.loadCollected(ctx.session.leadId);
+    const seeded = seedQuickAction(collected, ctx.quickActionEvent ?? null);
     const activeService = this.activeService(collected);
-    const priorityTopic = nextPriority(collected, activeService, ctx.photoCount);
+    const knownFields = readableFields(seeded);
+    const plan = planConversation({
+      collected: seeded,
+      service: activeService,
+      photoCount: ctx.photoCount,
+      latestCustomerMessage: ctx.latestCustomerMessage,
+    });
+    const knowledge = this.deps.knowledge.retrieve({
+      service: activeService,
+      priorityTopic: plan.priorityTopic,
+      knownFields,
+      latestCustomerMessage: ctx.latestCustomerMessage,
+    });
 
     const prompt = buildVeraPrompt({
       history: ctx.history
         .filter((m) => m.role !== 'SYSTEM')
         .map((m) => ({ role: m.role === 'CUSTOMER' ? 'CUSTOMER' : 'VERA', content: m.content })),
       latestCustomerMessage: ctx.latestCustomerMessage,
-      knownFields: readableFields(collected),
-      confirmedFields: collected.confirmed,
+      knownFields,
+      confirmedFields: seeded.confirmed,
       activeService,
-      priorityTopic,
+      priorityTopic: plan.priorityTopic,
+      plan,
+      knowledge,
       photoCount: ctx.photoCount,
-      measurementCount: hasMeasurements(collected) ? 1 : 0,
+      measurementCount: hasMeasurements(seeded) ? 1 : 0,
       preferredLanguage: 'es',
+      quickActionEvent: ctx.quickActionEvent ?? null,
     });
 
     const startedAt = Date.now();
@@ -92,7 +111,17 @@ export class VeraOrchestrator implements ConversationEngine {
       });
     }
 
-    const parsed = parseAiTurn(content);
+    let parsed = parseAiTurn(content);
+    if (!parsed.ok) {
+      const repair = await this.repairInvalidJson(prompt.system, content, parsed.issues);
+      if (repair !== null) {
+        content = repair.content;
+        model = repair.model;
+        tokensIn = addTokenCounts(tokensIn, repair.tokensIn);
+        tokensOut = addTokenCounts(tokensOut, repair.tokensOut);
+        parsed = parseAiTurn(content);
+      }
+    }
     if (!parsed.ok) {
       return this.failTurn(
         ctx,
@@ -106,7 +135,7 @@ export class VeraOrchestrator implements ConversationEngine {
       );
     }
 
-    return this.applyValidTurn(ctx, collected, parsed.turn, {
+    return this.applyValidTurn(ctx, seeded, parsed.turn, {
       model,
       latencyMs: Date.now() - startedAt,
       rawContent: content,
@@ -222,42 +251,58 @@ export class VeraOrchestrator implements ConversationEngine {
     return { reply, targetState: ctx.session.state, summary: null, reviewFlagged };
   }
 
+  private async repairInvalidJson(
+    originalSystem: string,
+    invalidContent: string,
+    issues: string[],
+  ): Promise<{
+    content: string;
+    model: string;
+    tokensIn: number | null;
+    tokensOut: number | null;
+  } | null> {
+    try {
+      const result = await this.deps.llm.complete({
+        system: [
+          originalSystem,
+          '',
+          'MODO REPARACIÓN JSON:',
+          '- La respuesta anterior no validó contra el contrato.',
+          '- Devuelve SOLO JSON válido con el mismo significado.',
+          '- No añadas datos nuevos. No cambies la intención. No mejores la respuesta.',
+          '- Solo corrige formato, claves faltantes, enums inválidos usando null/[] cuando sea necesario.',
+        ].join('\n'),
+        user: [
+          `Errores de validación: ${issues.join('; ')}`,
+          'Respuesta original a reparar:',
+          invalidContent.slice(0, 6000),
+        ].join('\n'),
+      });
+      return result;
+    } catch {
+      return null;
+    }
+  }
+
   private activeService(collected: CollectedProjectState): AiServiceType | null {
     const value = collected.fields['serviceType'];
     return typeof value === 'string' && isAiServiceType(value) ? value : null;
   }
 }
 
-function nextPriority(
+function seedQuickAction(
   collected: CollectedProjectState,
-  service: AiServiceType | null,
-  photoCount: number,
-): string | null {
-  if (service === null) {
-    return 'serviceType';
-  }
-  const met: Record<string, boolean> = {
-    municipality: hasValue(collected, 'municipality'),
-    propertyType: hasValue(collected, 'propertyType'),
-    projectArea: hasValue(collected, 'projectArea'),
-    description: hasValue(collected, 'description'),
-    photos: photoCount > 0,
-    measurements: hasMeasurements(collected),
-    stylePreferences: hasValue(collected, 'stylePreferences'),
-    plantPreferences: hasValue(collected, 'plantPreferences'),
-    lowMaintenancePreferred: hasValue(collected, 'lowMaintenancePreferred'),
-    requiresRemoval: hasValue(collected, 'requiresRemoval'),
-    hasIrrigation: hasValue(collected, 'hasIrrigation'),
-    desiredDate: hasValue(collected, 'desiredDate'),
-    budgetOrTimeline: hasValue(collected, 'budgetMaxCents') || hasValue(collected, 'desiredDate'),
-    siteVisit: collected.fields['visitRequested'] === true,
-  };
-  for (const topic of SERVICE_PRIORITIES[service]) {
-    if (met[topic] === false) {
-      return topic;
-    }
-  }
-  return 'siteVisit';
+  event: ConversationContext['quickActionEvent'],
+): CollectedProjectState {
+  if (event === null || event === undefined) return collected;
+  const hints = quickActionFieldHints(event);
+  const merged = mergeExtraction(collected, hints);
+  return merged.next;
+}
+
+function addTokenCounts(current: number | null, add: number | null): number | null {
+  if (current === null && add === null) return null;
+  return (current ?? 0) + (add ?? 0);
 }
 
 function readableFields(collected: CollectedProjectState): Record<string, string> {

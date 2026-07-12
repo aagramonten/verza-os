@@ -4,6 +4,7 @@ import {
   type ChatState,
   type ConfirmationSummary,
   type PublicMessage,
+  type QuickActionEvent,
 } from './chat-api.service';
 
 const STORAGE_KEY = 'vg_chat_session';
@@ -32,7 +33,9 @@ export class ChatStore {
   readonly state = signal<ChatState | null>(null);
   readonly leadReference = signal<string | null>(null);
   readonly summary = signal<ConfirmationSummary | null>(null);
+  readonly photoCount = signal(0);
   readonly sending = signal(false);
+  readonly uploading = signal(false);
   readonly restoring = signal(false);
   readonly error = signal<string | null>(null);
 
@@ -54,6 +57,7 @@ export class ChatStore {
       this.state.set(session.state);
       this.leadReference.set(session.leadReference);
       this.summary.set(session.summary);
+      this.photoCount.set(session.summary?.photoCount ?? 0);
     } catch {
       // Token no longer valid: forget it and start a fresh conversation lazily.
       localStorage.removeItem(STORAGE_KEY);
@@ -97,13 +101,67 @@ export class ChatStore {
     }
   }
 
-  /** Quick actions send a canned message so Vera handles them naturally. */
+  /** Forget the stored session and return to a fresh welcome state. The next
+   *  message the customer sends creates a brand-new session. */
+  reset(): void {
+    localStorage.removeItem(STORAGE_KEY);
+    this.messages.set([]);
+    this.state.set(null);
+    this.leadReference.set(null);
+    this.summary.set(null);
+    this.photoCount.set(0);
+    this.error.set(null);
+  }
+
+  /** Upload one or more photos; each is stored server-side and counted into
+   *  the project summary. Refreshes the session so state/summary stay current. */
+  async uploadPhotos(files: FileList | File[]): Promise<void> {
+    const list = Array.from(files);
+    if (list.length === 0 || this.uploading()) {
+      return;
+    }
+    this.error.set(null);
+    this.uploading.set(true);
+    try {
+      const stored = await this.ensureSession();
+      for (const file of list) {
+        const result = await this.api.uploadMedia(stored.sessionId, stored.resumeToken, file);
+        this.photoCount.set(result.photoCount);
+      }
+      const action = await this.api.sendAction(
+        stored.sessionId,
+        stored.resumeToken,
+        'USER_UPLOADS_PHOTOS',
+      );
+      this.messages.update((all) => [...all, ...action.messages]);
+      this.state.set(action.state);
+      this.summary.set(action.summary);
+    } catch {
+      this.error.set('No pudimos subir la foto. Debe ser una imagen (JPG/PNG/WebP) de máx. 10MB.');
+    } finally {
+      this.uploading.set(false);
+    }
+  }
+
+  /** Quick actions send structured events so the server can plan before the LLM turn. */
   requestVisit(): Promise<void> {
-    return this.send('Me gustaría coordinar una visita al lugar.');
+    return this.sendAction('USER_REQUESTS_SITE_VISIT');
   }
 
   skipMeasurements(): Promise<void> {
-    return this.send('No tengo las medidas exactas, prefiero que las verifiquen en la visita.');
+    return this.sendAction('USER_DOES_NOT_KNOW_MEASUREMENTS');
+  }
+
+  hasBudget(): Promise<void> {
+    return this.sendAction('USER_HAS_BUDGET');
+  }
+
+  wantsLowMaintenance(): Promise<void> {
+    return this.sendAction('USER_WANTS_LOW_MAINTENANCE');
+  }
+
+  wantsLuxury(): Promise<void> {
+    return this.sendAction('USER_WANTS_LUXURY');
   }
 
   async confirm(): Promise<void> {
@@ -152,6 +210,23 @@ export class ChatStore {
     this.state.set(created.state);
     this.leadReference.set(created.leadReference);
     return fresh;
+  }
+
+  private async sendAction(event: QuickActionEvent): Promise<void> {
+    if (!this.canSend()) return;
+    this.error.set(null);
+    this.sending.set(true);
+    try {
+      const stored = await this.ensureSession();
+      const result = await this.api.sendAction(stored.sessionId, stored.resumeToken, event);
+      this.messages.update((all) => [...all, ...result.messages]);
+      this.state.set(result.state);
+      this.summary.set(result.summary);
+    } catch {
+      this.error.set('No pudimos procesar la acción. Intenta de nuevo.');
+    } finally {
+      this.sending.set(false);
+    }
   }
 
   private readStored(): StoredSession | null {

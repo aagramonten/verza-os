@@ -22,3 +22,4 @@ export type { LlmProvider } from './application/llm-provider.port.js';
 export { LlmUnavailableError, LlmTimeoutError } from './application/llm-provider.port.js';
 export { buildVeraPrompt, VERA_PROMPT_VERSION } from './application/prompt-builder.js';
 export { parseAiTurn, type AiTurn } from './application/ai-turn.schema.js';
+export { StaticKnowledgeService, type KnowledgeService } from './application/knowledge-service.js';

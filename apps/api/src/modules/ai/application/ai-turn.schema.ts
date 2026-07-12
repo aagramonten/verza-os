@@ -101,10 +101,12 @@ export const extractedDataSchema = z.object({
   email: nullableString,
   municipality: nullableString,
   addressText: z.string().trim().min(1).max(500).nullable(),
-  propertyType: z.enum(AI_PROPERTY_TYPES).nullable(),
-  serviceType: z.enum(AI_SERVICE_TYPES).nullable(),
+  // Enum fields degrade to null on a hallucinated value rather than failing
+  // the whole extraction (the normalizer/merge only apply known values).
+  propertyType: z.enum(AI_PROPERTY_TYPES).nullable().catch(null),
+  serviceType: z.enum(AI_SERVICE_TYPES).nullable().catch(null),
   description: z.string().trim().min(1).max(2000).nullable(),
-  projectArea: z.enum(AI_PROJECT_AREAS).nullable(),
+  projectArea: z.enum(AI_PROJECT_AREAS).nullable().catch(null),
   lengthFt: nullableNumber,
   widthFt: nullableNumber,
   reportedSquareFeet: nullableNumber,
@@ -119,7 +121,7 @@ export const extractedDataSchema = z.object({
   lowMaintenancePreferred: nullableBool,
   hasPets: nullableBool,
   hasChildren: nullableBool,
-  sunCondition: z.enum(AI_SUN_CONDITIONS).nullable(),
+  sunCondition: z.enum(AI_SUN_CONDITIONS).nullable().catch(null),
   hasDrainageConcern: nullableBool,
 });
 export type ExtractedData = z.infer<typeof extractedDataSchema>;
@@ -135,22 +137,27 @@ export const contradictionSchema = z.object({
   clarificationQuestion: z.string().min(1).max(400),
 });
 
+// Only `replyToCustomer` (the customer-visible text) and `extractedData` (the
+// project data) are authoritative. Every other field is advisory — the server
+// re-derives conversation state and the next action deterministically — so a
+// model slip on those (e.g. putting a next-action value in `intent`) must
+// degrade gracefully with `.catch()` rather than discard an otherwise-good turn.
 export const aiTurnSchema = z.object({
   replyToCustomer: z.string().trim().min(1).max(1500),
-  language: z.enum(['es', 'en']),
-  intent: z.enum(AI_INTENTS),
+  language: z.enum(['es', 'en']).catch('es'),
+  intent: z.enum(AI_INTENTS).catch('OTHER'),
   extractedData: extractedDataSchema,
-  fieldEvidence: fieldEvidenceSchema,
-  missingRequiredFields: z.array(z.string().max(60)).max(40).default([]),
-  missingPreferredFields: z.array(z.string().max(60)).max(40).default([]),
-  contradictions: z.array(contradictionSchema).max(20).default([]),
-  buyingSignals: z.array(z.enum(AI_BUYING_SIGNALS)).max(20).default([]),
-  hesitationSignals: z.array(z.enum(AI_HESITATION_SIGNALS)).max(20).default([]),
-  recommendedNextAction: z.enum(AI_NEXT_ACTIONS),
-  recommendedNextQuestion: z.string().trim().min(1).max(400).nullable(),
-  readyForConfirmation: z.boolean(),
-  visitRecommended: z.boolean(),
-  safetyFlags: z.array(z.string().max(80)).max(20).default([]),
+  fieldEvidence: fieldEvidenceSchema.catch({}),
+  missingRequiredFields: z.array(z.string().max(60)).max(40).catch([]),
+  missingPreferredFields: z.array(z.string().max(60)).max(40).catch([]),
+  contradictions: z.array(contradictionSchema).max(20).catch([]),
+  buyingSignals: z.array(z.enum(AI_BUYING_SIGNALS)).max(20).catch([]),
+  hesitationSignals: z.array(z.enum(AI_HESITATION_SIGNALS)).max(20).catch([]),
+  recommendedNextAction: z.enum(AI_NEXT_ACTIONS).catch('CONTINUE_CONVERSATION'),
+  recommendedNextQuestion: z.string().trim().min(1).max(400).nullable().catch(null),
+  readyForConfirmation: z.boolean().catch(false),
+  visitRecommended: z.boolean().catch(false),
+  safetyFlags: z.array(z.string().max(80)).max(20).catch([]),
 });
 export type AiTurn = z.infer<typeof aiTurnSchema>;
 

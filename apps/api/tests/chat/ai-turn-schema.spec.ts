@@ -63,9 +63,18 @@ describe('AI turn schema', () => {
     expect(parseAiTurn('{ not json').ok).toBe(false);
   });
 
-  it('rejects an unknown enum member (no coercion)', () => {
-    expect(parseAiTurn(validTurn({ intent: 'APPROVE_QUOTE' })).ok).toBe(false);
-    expect(parseAiTurn(validTurn({ recommendedNextAction: 'SEND_QUOTE' })).ok).toBe(false);
+  it('coerces unknown ADVISORY enum values to safe defaults (keeps the turn usable)', () => {
+    // Advisory fields are not authoritative — the server re-derives state/next
+    // action — so a model slip degrades gracefully instead of discarding a
+    // good extraction. It can never trigger an action: there is no code path
+    // that acts on `intent`/`recommendedNextAction` to approve or send anything.
+    const a = parseAiTurn(validTurn({ intent: 'APPROVE_QUOTE' }));
+    expect(a.ok).toBe(true);
+    if (a.ok) expect(a.turn.intent).toBe('OTHER');
+
+    const b = parseAiTurn(validTurn({ recommendedNextAction: 'SEND_QUOTE' }));
+    expect(b.ok).toBe(true);
+    if (b.ok) expect(b.turn.recommendedNextAction).toBe('CONTINUE_CONVERSATION');
   });
 
   it('rejects out-of-contract numbers', () => {

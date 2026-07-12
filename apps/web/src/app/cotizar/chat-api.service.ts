@@ -53,6 +53,14 @@ export interface MessagesCreated {
   summary: ConfirmationSummary | null;
 }
 
+export type QuickActionEvent =
+  | 'USER_DOES_NOT_KNOW_MEASUREMENTS'
+  | 'USER_REQUESTS_SITE_VISIT'
+  | 'USER_UPLOADS_PHOTOS'
+  | 'USER_HAS_BUDGET'
+  | 'USER_WANTS_LOW_MAINTENANCE'
+  | 'USER_WANTS_LUXURY';
+
 const BASE = '/api/v1/public/chat';
 
 @Injectable({ providedIn: 'root' })
@@ -68,6 +76,20 @@ export class ChatApiService {
       this.http.post<MessagesCreated>(
         `${BASE}/sessions/${sessionId}/messages`,
         { message },
+        { headers: new HttpHeaders({ 'x-resume-token': resumeToken }) },
+      ),
+    );
+  }
+
+  sendAction(
+    sessionId: string,
+    resumeToken: string,
+    event: QuickActionEvent,
+  ): Promise<MessagesCreated> {
+    return firstValueFrom(
+      this.http.post<MessagesCreated>(
+        `${BASE}/sessions/${sessionId}/actions`,
+        { event },
         { headers: new HttpHeaders({ 'x-resume-token': resumeToken }) },
       ),
     );
@@ -94,6 +116,31 @@ export class ChatApiService {
       this.http.post<MessagesCreated>(
         `${BASE}/sessions/${sessionId}/correct`,
         {},
+        { headers: new HttpHeaders({ 'x-resume-token': resumeToken }) },
+      ),
+    );
+  }
+
+  getSession(sessionId: string, resumeToken: string): Promise<PublicSession> {
+    return firstValueFrom(
+      this.http.get<PublicSession>(`${BASE}/sessions/${sessionId}`, {
+        headers: new HttpHeaders({ 'x-resume-token': resumeToken }),
+      }),
+    );
+  }
+
+  uploadMedia(
+    sessionId: string,
+    resumeToken: string,
+    file: File,
+  ): Promise<{ mediaId: string; photoCount: number }> {
+    const form = new FormData();
+    form.append('photo', file);
+    // Content-Type (multipart boundary) is set automatically for FormData bodies.
+    return firstValueFrom(
+      this.http.post<{ mediaId: string; photoCount: number }>(
+        `${BASE}/sessions/${sessionId}/media`,
+        form,
         { headers: new HttpHeaders({ 'x-resume-token': resumeToken }) },
       ),
     );

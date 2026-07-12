@@ -24,7 +24,10 @@ import { QuickActionsComponent } from './quick-actions.component';
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <main class="chat-page">
-      <app-conversation-header [leadReference]="store.leadReference()" />
+      <app-conversation-header
+        [leadReference]="store.leadReference()"
+        (newConversation)="onNewConversation()"
+      />
       @if (store.error(); as message) {
         <p class="error" role="alert">{{ message }}</p>
       }
@@ -47,10 +50,18 @@ import { QuickActionsComponent } from './quick-actions.component';
         <p class="done">✅ ¡Gracias! Tu información quedó registrada. El equipo de Verza Garden te contactará.</p>
       } @else if (!store.awaitingConfirmation()) {
         <app-quick-actions
-          [disabled]="!store.canSend()"
+          [disabled]="!store.canSend() || store.uploading()"
+          [photoCount]="store.photoCount()"
+          (photosSelected)="store.uploadPhotos($event)"
           (requestVisit)="store.requestVisit()"
           (skipMeasurements)="store.skipMeasurements()"
+          (hasBudget)="store.hasBudget()"
+          (wantsLowMaintenance)="store.wantsLowMaintenance()"
+          (wantsLuxury)="store.wantsLuxury()"
         />
+        @if (store.uploading()) {
+          <p class="uploading">Subiendo foto…</p>
+        }
         <app-chat-input [disabled]="!store.canSend()" (send)="store.send($event)" />
       }
     </main>
@@ -74,7 +85,8 @@ import { QuickActionsComponent } from './quick-actions.component';
       font-size: 0.85rem;
       text-align: center;
     }
-    .restoring {
+    .restoring,
+    .uploading {
       margin: 0;
       padding: 8px 16px;
       font-size: 0.85rem;
@@ -96,5 +108,16 @@ export class CotizarComponent implements OnInit {
 
   ngOnInit(): void {
     void this.store.init();
+  }
+
+  onNewConversation(): void {
+    // Confirm only when there is a conversation in progress worth losing.
+    if (this.store.messages().length > 0 && !this.store.confirmed()) {
+      const ok = window.confirm('¿Empezar una conversación nueva? Se perderá el progreso actual.');
+      if (!ok) {
+        return;
+      }
+    }
+    this.store.reset();
   }
 }

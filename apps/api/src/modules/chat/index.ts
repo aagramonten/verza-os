@@ -2,7 +2,7 @@ import type { Router } from 'express';
 import type { PrismaClient } from '@prisma/client';
 import { AuditLogService } from '../../shared/audit/audit-log.service.js';
 import type { Env } from '../../config/env.js';
-import { createLlmProvider, type LlmProvider } from '../ai/index.js';
+import { createLlmProvider, StaticKnowledgeService, type LlmProvider } from '../ai/index.js';
 import { PublicChatService } from './application/public-chat.service.js';
 import { ResumeTokenService } from './application/resume-token.service.js';
 import { PlaceholderConversationEngine } from './application/placeholder-engine.js';
@@ -16,6 +16,9 @@ import { PrismaChatExtractionRepository } from './infrastructure/prisma-chat-ext
 import { InMemoryRateLimiter } from './infrastructure/in-memory-rate-limiter.js';
 import { SystemClock } from './infrastructure/system-clock.js';
 import { createPublicChatRouter } from './presentation/public-chat.router.js';
+import { MediaUploadService } from '../media/application/media-upload.service.js';
+import { LocalDiskStorage } from '../media/infrastructure/local-disk-storage.js';
+import { PrismaLeadMediaRepository } from '../media/infrastructure/prisma-lead-media.repository.js';
 
 export interface ChatModuleOverrides {
   clock?: Clock;
@@ -47,11 +50,17 @@ export function createChatModule(
   const extractions = new PrismaChatExtractionRepository(prisma, env.DEFAULT_COMPANY_ID);
 
   const llm = overrides.llm ?? createLlmProvider(env);
+  const knowledge = new StaticKnowledgeService();
   const engine: ConversationEngine =
     overrides.engine ??
     (llm !== null
-      ? new VeraOrchestrator({ llm, leadData, extractions, audit, clock })
+      ? new VeraOrchestrator({ llm, leadData, extractions, audit, clock, knowledge })
       : new PlaceholderConversationEngine());
+
+  const media = new MediaUploadService(
+    new LocalDiskStorage(env.STORAGE_LOCAL_DIR),
+    new PrismaLeadMediaRepository(prisma, env.DEFAULT_COMPANY_ID),
+  );
 
   const service = new PublicChatService({
     sessions: new PrismaChatSessionRepository(prisma, env.DEFAULT_COMPANY_ID),
@@ -60,6 +69,7 @@ export function createChatModule(
     leadData,
     tokens: new ResumeTokenService(),
     engine,
+    media,
     audit,
     clock,
     resumeTokenTtlDays: env.RESUME_TOKEN_TTL_DAYS,

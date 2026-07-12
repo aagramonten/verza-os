@@ -31,7 +31,8 @@ export class OpenAiCompatibleProvider implements LlmProvider {
 
   constructor(private readonly config: OpenAiCompatibleConfig) {
     this.timeoutMs = config.timeoutMs ?? 20_000;
-    this.temperature = config.temperature ?? 0.4;
+    // Low temperature keeps the model faithful to the strict JSON contract.
+    this.temperature = config.temperature ?? 0.2;
   }
 
   async complete(request: LlmCompletionRequest): Promise<LlmCompletionResult> {

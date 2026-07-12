@@ -1,6 +1,7 @@
 import type { ChatSessionState } from '@verza/shared';
 import type { ChatMessage, ChatMessageRole, ChatSession } from '../domain/chat-session.js';
 import type { CollectedProjectState } from './collected-project.js';
+import type { QuickActionEvent } from './quick-action.js';
 import type { ConfirmationSummary } from './summary.js';
 
 /** Injectable time source so expiration tests never sleep. */
@@ -103,6 +104,7 @@ export interface ConversationContext {
   latestCustomerMessage: string;
   history: { role: ChatMessageRole; content: string }[];
   photoCount: number;
+  quickActionEvent?: QuickActionEvent | null;
 }
 
 /** Result of a turn. The engine decides the target phase (server code); the

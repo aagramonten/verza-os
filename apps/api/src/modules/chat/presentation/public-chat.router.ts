@@ -1,8 +1,13 @@
 import { createHash } from 'node:crypto';
 import { Router, type NextFunction, type Request, type Response } from 'express';
+import multer, { MulterError } from 'multer';
 import type { AuditLogService } from '../../../shared/audit/audit-log.service.js';
 import { HttpError } from '../../../shared/http/problem.js';
 import { MessageRejectedError } from '../../../shared/text/sanitize.js';
+import {
+  MediaRejectedError,
+  MAX_PHOTO_BYTES,
+} from '../../media/application/media-upload.service.js';
 import {
   ChatSessionNotFoundError,
   ConfirmationNotAvailableError,
@@ -16,6 +21,7 @@ import {
   resumeSchema,
   resumeTokenHeaderSchema,
   sendMessageSchema,
+  quickActionSchema,
   sessionIdSchema,
 } from './schemas.js';
 
@@ -89,6 +95,18 @@ export function createPublicChatRouter(deps: PublicChatRouterDeps): Router {
     }
   });
 
+  router.post('/sessions/:sessionId/actions', async (req, res, next) => {
+    try {
+      const sessionId = sessionIdSchema.parse(req.params['sessionId']);
+      const token = requireToken(req);
+      const body = quickActionSchema.parse(req.body);
+      const result = await deps.service.appendQuickAction(sessionId, token, body.event);
+      res.status(201).json(result);
+    } catch (error) {
+      next(mapError(error));
+    }
+  });
+
   router.get('/sessions/:sessionId', async (req, res, next) => {
     try {
       const sessionId = sessionIdSchema.parse(req.params['sessionId']);
@@ -108,6 +126,50 @@ export function createPublicChatRouter(deps: PublicChatRouterDeps): Router {
       next(mapError(error));
     }
   });
+
+  const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: MAX_PHOTO_BYTES, files: 1 },
+  });
+
+  router.post('/sessions/:sessionId/media', (req, res, next) => {
+    upload.single('photo')(req, res, (err: unknown) => {
+      if (err instanceof MulterError) {
+        next(
+          new HttpError(
+            err.code === 'LIMIT_FILE_SIZE' ? 413 : 400,
+            err.code === 'LIMIT_FILE_SIZE' ? 'Payload Too Large' : 'Bad Request',
+            err.code === 'LIMIT_FILE_SIZE' ? 'The photo is too large (max 10MB)' : 'Invalid upload',
+          ),
+        );
+        return;
+      }
+      if (err !== undefined && err !== null) {
+        next(err);
+        return;
+      }
+      void handleUpload(req, res, next);
+    });
+  });
+
+  async function handleUpload(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const sessionId = sessionIdSchema.parse(req.params['sessionId']);
+      const token = requireToken(req);
+      const file = req.file;
+      if (file === undefined) {
+        throw new HttpError(400, 'Bad Request', 'A photo file is required (field "photo")');
+      }
+      const result = await deps.service.uploadPhoto(sessionId, token, {
+        buffer: file.buffer,
+        mimetype: file.mimetype,
+        size: file.size,
+      });
+      res.status(201).json(result);
+    } catch (error) {
+      next(mapError(error));
+    }
+  }
 
   router.post('/sessions/:sessionId/confirm', async (req, res, next) => {
     try {
@@ -177,6 +239,15 @@ function mapError(error: unknown): unknown {
       'Unprocessable Entity',
       error.reason === 'empty' ? 'Message is empty' : 'Message exceeds the maximum length',
     );
+  }
+  if (error instanceof MediaRejectedError) {
+    if (error.reason === 'too_large') {
+      return new HttpError(413, 'Payload Too Large', 'The photo is too large (max 10MB)');
+    }
+    if (error.reason === 'too_many') {
+      return new HttpError(409, 'Conflict', 'Maximum number of photos reached');
+    }
+    return new HttpError(422, 'Unprocessable Entity', 'The file is not a supported image');
   }
   if (isZodError(error)) {
     return new HttpError(400, 'Bad Request', 'Request validation failed');
