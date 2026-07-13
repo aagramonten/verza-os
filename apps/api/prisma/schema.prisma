@@ -4,7 +4,7 @@
 // money in INT cents, append-only tables noted.
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
   // "native" for local dev; the Debian/OpenSSL 3.0 target is the production
   // container (node:20-slim = Debian Bookworm) so the correct query engine
   // is always bundled regardless of build-time OpenSSL detection.
@@ -125,6 +125,75 @@ enum UserRole {
   ADMIN
 }
 
+// ── Financials (projects, quotes, costs, marketing, payments) ────────
+
+// Operational lifecycle of a delivered project. A project may originate
+// from a won quote, a maintenance plan, or a manual internal workflow.
+enum ProjectStatus {
+  PLANNED
+  IN_PROGRESS
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+// Official customer-facing quote. Versioned; approval requires a human
+// actor (BUSINESS_RULES §Quote). Superseded rows are retained, never deleted.
+enum QuoteStatus {
+  DRAFT
+  APPROVED
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  SUPERSEDED
+}
+
+// Cost categories for project profitability (owner requirement).
+enum CostCategory {
+  PLANTS
+  SOIL
+  MULCH
+  DECORATIVE_ROCK
+  IRRIGATION
+  LIGHTING
+  GRASS
+  EQUIPMENT_RENTAL
+  FUEL
+  LABOR
+  DISPOSAL
+  MARKETING
+  MISCELLANEOUS
+}
+
+// Advertising channels. Spend is tracked separately and optionally
+// allocated to a project (BUSINESS_RULES §Marketing).
+enum MarketingChannel {
+  FACEBOOK_ADS
+  INSTAGRAM_ADS
+  GOOGLE_ADS
+  TIKTOK_ADS
+  REFERRAL
+  OTHER
+}
+
+enum PaymentMethod {
+  CASH
+  ATH_MOVIL
+  BANK_TRANSFER
+  CARD
+  CHECK
+  OTHER
+}
+
+// Where a payment sits in the collection lifecycle of a project.
+enum PaymentType {
+  DEPOSIT
+  PROGRESS
+  FINAL
+  REFUND
+}
+
 // ── Platform core ────────────────────────────────────────────────────
 
 model Company {
@@ -135,7 +204,7 @@ model Company {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users     User[]
+  users User[]
 
   @@map("companies")
 }
@@ -152,8 +221,38 @@ model User {
 
   company Company @relation(fields: [companyId], references: [id])
 
+  // Human approver of official quotes (BUSINESS_RULES §Quote).
+  approvedQuotes OfficialQuote[] @relation("QuoteApprover")
+  refreshTokens  RefreshToken[]
+
   @@index([companyId, email])
   @@map("users")
+}
+
+// Opaque refresh tokens for the admin/owner console. The raw token is a
+// 256-bit random string handed to the client once; only its SHA-256 hash is
+// stored (same pattern as ChatSession.resumeTokenHash). Rotation is tracked
+// by `familyId`: each refresh issues a new row and revokes the previous one;
+// presenting an already-revoked token revokes the whole family (theft
+// detection). Access tokens are stateless JWTs and are NOT stored here.
+model RefreshToken {
+  id             String    @id @default(uuid())
+  companyId      String
+  userId         String
+  familyId       String
+  tokenHash      String    @unique
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  replacedByHash String?
+  userAgent      String?
+  ipHash         String?
+  createdAt      DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([companyId, userId])
+  @@index([familyId])
+  @@map("refresh_tokens")
 }
 
 // Versioned weights for the deterministic scoring engines (strategy §6).
@@ -185,7 +284,8 @@ model Customer {
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
 
-  leads Lead[]
+  leads    Lead[]
+  projects Project[]
 
   @@unique([companyId, phone])
   @@index([companyId, createdAt])
@@ -228,6 +328,7 @@ model Lead {
   measurements  ProjectMeasurement[]
   confirmations LeadConfirmation[]
   estimates     EstimateRange[]
+  projects      Project[]
 
   @@index([companyId, status])
   @@index([companyId, createdAt])
@@ -237,20 +338,20 @@ model Lead {
 // ── Chat ─────────────────────────────────────────────────────────────
 
 model ChatSession {
-  id                  String           @id @default(uuid())
-  companyId           String
-  leadId              String?
-  state               ChatSessionState @default(STARTED)
-  language            ChatLanguage     @default(ES)
-  resumeTokenHash     String           @unique // SHA-256 of the 256-bit resume token; raw token is never stored
+  id                   String           @id @default(uuid())
+  companyId            String
+  leadId               String?
+  state                ChatSessionState @default(STARTED)
+  language             ChatLanguage     @default(ES)
+  resumeTokenHash      String           @unique // SHA-256 of the 256-bit resume token; raw token is never stored
   resumeTokenRevokedAt DateTime?
-  lastActivityAt      DateTime         @default(now())
-  expiresAt           DateTime
-  ipHash              String
-  userAgent           String?
-  closedAt            DateTime?
-  createdAt           DateTime         @default(now())
-  updatedAt           DateTime         @updatedAt
+  lastActivityAt       DateTime         @default(now())
+  expiresAt            DateTime
+  ipHash               String
+  userAgent            String?
+  closedAt             DateTime?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
 
   lead          Lead?              @relation(fields: [leadId], references: [id])
   messages      ChatMessage[]
@@ -369,18 +470,18 @@ model AiExtraction {
 // ── Pricing (deterministic engine inputs/outputs) ────────────────────
 
 model PricingRule {
-  id             String      @id @default(uuid())
-  companyId      String
-  serviceType    ServiceType
-  unit           PricingUnit
-  minRateCents   Int
-  maxRateCents   Int
+  id              String      @id @default(uuid())
+  companyId       String
+  serviceType     ServiceType
+  unit            PricingUnit
+  minRateCents    Int
+  maxRateCents    Int
   minimumJobCents Int
-  factors        Json?
-  version        Int
-  active         Boolean     @default(true)
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
+  factors         Json?
+  version         Int
+  active          Boolean     @default(true)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
 
   estimates EstimateRange[]
 
@@ -425,4 +526,161 @@ model AuditLog {
   @@index([companyId, entity, entityId])
   @@index([companyId, createdAt])
   @@map("audit_logs")
+}
+
+// ── Financials ───────────────────────────────────────────────────────
+//
+// The financial source of truth for a company. Money is always integer
+// cents with an explicit currency (AGENTS.md §Money). Revenue is layered:
+//   Quoted   → OfficialQuote.totalCents (versioned, human-approved)
+//   Contract → Project.contractAmountCents (expected revenue)
+//   Collected → sum(Payment.amountCents)
+//   Outstanding → contract − collected
+// Profit and margins are NOT stored; they are recomputed deterministically
+// from these rows by the analytics layer. The model is intentionally
+// additive so future invoicing/accounting modules can reference it
+// (e.g. Payment.invoiceId) without breaking changes.
+
+// A delivered piece of work. Owns costs, quotes, payments, and allocated
+// marketing spend. May originate from a won lead or be created manually.
+model Project {
+  id                  String        @id @default(uuid())
+  companyId           String
+  leadId              String?
+  customerId          String?
+  referenceNumber     String        @unique // VGP-0001
+  title               String?
+  serviceType         ServiceType?
+  status              ProjectStatus @default(PLANNED)
+  scope               String?       @db.Text
+  notes               String?       @db.Text
+  currency            String        @default("USD")
+  // Expected revenue. Populated from an accepted quote when available,
+  // but the owner may always enter or override it manually.
+  contractAmountCents Int?
+  contractSignedAt    DateTime?
+  wonAt               DateTime?
+  startedAt           DateTime?
+  completedAt         DateTime?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  lead            Lead?            @relation(fields: [leadId], references: [id])
+  customer        Customer?        @relation(fields: [customerId], references: [id])
+  quotes          OfficialQuote[]
+  costs           ProjectCost[]
+  payments        Payment[]
+  marketingSpends MarketingSpend[]
+
+  @@index([companyId, status])
+  @@index([companyId, createdAt])
+  @@index([companyId, serviceType])
+  @@index([companyId, leadId])
+  @@map("projects")
+}
+
+// Official customer-facing offer. Versioned and append-only in spirit:
+// recompute/renegotiate = new version; prior versions are SUPERSEDED,
+// never mutated destructively. Approval requires a human actor.
+model OfficialQuote {
+  id               String      @id @default(uuid())
+  companyId        String
+  projectId        String
+  version          Int
+  status           QuoteStatus @default(DRAFT)
+  currency         String      @default("USD")
+  lineItems        Json?
+  subtotalCents    Int
+  taxCents         Int         @default(0)
+  totalCents       Int
+  validUntil       DateTime?
+  approvedByUserId String?
+  approvedAt       DateTime?
+  sentAt           DateTime?
+  acceptedAt       DateTime?
+  notes            String?     @db.Text
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  project    Project @relation(fields: [projectId], references: [id])
+  approvedBy User?   @relation("QuoteApprover", fields: [approvedByUserId], references: [id])
+
+  @@unique([projectId, version])
+  @@index([companyId, projectId])
+  @@index([companyId, status])
+  @@map("official_quotes")
+}
+
+// A single project expense. quantity × unitCostCents is mirrored into
+// totalCents at write time so aggregates never depend on float math.
+model ProjectCost {
+  id            String       @id @default(uuid())
+  companyId     String
+  projectId     String
+  category      CostCategory
+  description   String
+  vendor        String?
+  quantity      Decimal      @default(1) @db.Decimal(12, 3)
+  unitCostCents Int
+  totalCents    Int
+  currency      String       @default("USD")
+  purchaseDate  DateTime
+  receiptKey    String? // private storage key; short-lived URLs on read
+  notes         String?      @db.Text
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id])
+
+  @@index([companyId, projectId])
+  @@index([companyId, category])
+  @@index([companyId, purchaseDate])
+  @@map("project_costs")
+}
+
+// Advertising spend. Tracked at the channel level and optionally
+// allocated to a specific project for per-project profitability.
+model MarketingSpend {
+  id          String           @id @default(uuid())
+  companyId   String
+  channel     MarketingChannel
+  description String?
+  amountCents Int
+  currency    String           @default("USD")
+  spentAt     DateTime
+  projectId   String? // optional allocation
+  campaignRef String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  project Project? @relation(fields: [projectId], references: [id])
+
+  @@index([companyId, spentAt])
+  @@index([companyId, projectId])
+  @@index([companyId, channel])
+  @@map("marketing_spends")
+}
+
+// A payment received against a project. Sum drives Collected Revenue and
+// cash-flow reporting. Designed so a future Invoice model can attach via
+// an added invoiceId column without a breaking change.
+model Payment {
+  id          String        @id @default(uuid())
+  companyId   String
+  projectId   String
+  amountCents Int
+  currency    String        @default("USD")
+  method      PaymentMethod
+  type        PaymentType   @default(PROGRESS)
+  reference   String?
+  receivedAt  DateTime
+  notes       String?       @db.Text
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id])
+
+  @@index([companyId, projectId])
+  @@index([companyId, receivedAt])
+  @@map("payments")
 }

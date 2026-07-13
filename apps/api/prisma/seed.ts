@@ -1,6 +1,7 @@
 import { PrismaClient, PricingUnit, ServiceType, UserRole } from '@prisma/client';
 import { SCORING_CONFIG_V1 } from '@verza/shared';
 import { loadEnv } from '../src/config/env.js';
+import { ScryptPasswordHasher } from '../src/modules/auth/infrastructure/scrypt-password-hasher.js';
 
 /**
  * Idempotent seed: safe to run repeatedly (upserts keyed on stable uniques).
@@ -93,15 +94,24 @@ export async function seed(prisma: PrismaClient): Promise<void> {
     },
   });
 
-  // 2. Owner user (no password yet — auth ships with the admin console, not the chat MVP)
+  // 2. Owner user. A login password is set only when SEED_OWNER_PASSWORD is
+  //    provided; otherwise the account has no password (as in the chat MVP).
+  const passwordHash = env.SEED_OWNER_PASSWORD
+    ? await new ScryptPasswordHasher().hash(env.SEED_OWNER_PASSWORD)
+    : undefined;
   await prisma.user.upsert({
     where: { email: env.SEED_OWNER_EMAIL },
-    update: { name: env.SEED_OWNER_NAME, role: UserRole.OWNER },
+    update: {
+      name: env.SEED_OWNER_NAME,
+      role: UserRole.OWNER,
+      ...(passwordHash ? { passwordHash } : {}),
+    },
     create: {
       companyId: company.id,
       email: env.SEED_OWNER_EMAIL,
       name: env.SEED_OWNER_NAME,
       role: UserRole.OWNER,
+      ...(passwordHash ? { passwordHash } : {}),
     },
   });
 

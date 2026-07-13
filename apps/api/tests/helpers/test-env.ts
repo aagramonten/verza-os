@@ -19,6 +19,10 @@ export function validEnvSource(overrides: Record<string, string> = {}): NodeJS.P
     STORAGE_LOCAL_DIR: './uploads',
     AI_ENABLED: 'false',
     RATE_LIMIT_PUBLIC_RPM: '30',
+    AUTH_JWT_SECRET: 'test-secret-test-secret-test-secret-0123456789',
+    AUTH_ACCESS_TTL_MIN: '15',
+    AUTH_REFRESH_TTL_DAYS: '30',
+    AUTH_LOGIN_RATE_LIMIT_PER_MIN: '1000',
     ...overrides,
   };
 }

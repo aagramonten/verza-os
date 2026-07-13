@@ -6,12 +6,15 @@ import type { PrismaClient } from '@prisma/client';
 import type { Env } from './config/env.js';
 import { errorHandler, notFoundHandler } from './shared/http/problem.js';
 import { createChatModule, type ChatModuleOverrides } from './modules/chat/index.js';
+import { createAuthModule, type AuthModuleOverrides } from './modules/auth/index.js';
+import { createFinancialsModule } from './modules/financials/index.js';
 
 export interface AppDependencies {
   env: Env;
   prisma: PrismaClient;
   logger?: Logger;
   chatOverrides?: ChatModuleOverrides;
+  authOverrides?: AuthModuleOverrides;
 }
 
 export const API_VERSION = '0.1.0';
@@ -27,7 +30,13 @@ interface HealthResponse {
  * Express app factory. All dependencies are injected so tests can construct
  * the app against their own database and configuration.
  */
-export function buildApp({ env, prisma, logger, chatOverrides }: AppDependencies): Express {
+export function buildApp({
+  env,
+  prisma,
+  logger,
+  chatOverrides,
+  authOverrides,
+}: AppDependencies): Express {
   const log =
     logger ??
     pino({
@@ -71,6 +80,12 @@ export function buildApp({ env, prisma, logger, chatOverrides }: AppDependencies
 
   const chat = createChatModule(env, prisma, chatOverrides ?? {});
   app.use('/api/v1/public/chat', chat.router);
+
+  const auth = createAuthModule(env, prisma, authOverrides ?? {});
+  app.use('/api/v1/auth', auth.router);
+
+  const financials = createFinancialsModule(env, prisma, { authenticate: auth.authenticate });
+  app.use('/api/v1', financials.router);
 
   app.use(notFoundHandler);
   app.use(errorHandler);
