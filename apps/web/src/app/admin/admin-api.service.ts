@@ -1,0 +1,183 @@
+import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { Injectable, inject } from '@angular/core';
+import { Router } from '@angular/router';
+import { firstValueFrom } from 'rxjs';
+
+export type UserRole = 'OWNER' | 'ADMIN';
+
+export interface AdminUser {
+  id: string;
+  companyId: string;
+  email: string;
+  name: string;
+  role: UserRole;
+}
+
+export interface AuthResult {
+  accessToken: string;
+  expiresInSec: number;
+  refreshToken: string;
+  user: AdminUser;
+}
+
+export interface Dashboard {
+  currency: string;
+  period: { label: string; start: string; end: string };
+  revenue: {
+    quotedCents: number;
+    contractCents: number;
+    collectedCents: number;
+    outstandingCents: number;
+  };
+  thisMonth: {
+    contractSignedCents: number;
+    collectedCents: number;
+    costsCents: number;
+    quotesSent: number;
+  };
+  costs: {
+    projectCostsCents: number;
+    marketingSpendCents: number;
+    totalCents: number;
+    breakdown: Array<{ category: string; amountCents: number }>;
+  };
+  profit: {
+    grossCents: number;
+    netCents: number;
+    grossMarginPct: number | null;
+    netMarginPct: number | null;
+    averagePerProjectCents: number | null;
+    roiPct: number | null;
+  };
+  averages: { ticketCents: number | null };
+  projects: {
+    total: number;
+    withContract: number;
+    byStatus: Array<{ status: string; count: number }>;
+  };
+  profitByService: Array<{
+    serviceType: string | null;
+    contractCents: number;
+    costsCents: number;
+    profitCents: number;
+    projectCount: number;
+  }>;
+  marketing: {
+    totalCents: number;
+    costPerLeadCents: number | null;
+    costPerWonCustomerCents: number | null;
+  };
+  leads: { total: number };
+  hero: {
+    quotesSentThisMonth: { value: number; goal: number; met: boolean };
+    averageTicketCents: { value: number | null; goalCents: number; met: boolean };
+    netProfitPerProjectCents: { value: number | null; goalCents: number; met: boolean };
+  };
+}
+
+const ACCESS_KEY = 'verza.admin.accessToken';
+const REFRESH_KEY = 'verza.admin.refreshToken';
+const USER_KEY = 'verza.admin.user';
+
+@Injectable({ providedIn: 'root' })
+export class AdminApiService {
+  private readonly http = inject(HttpClient);
+  private readonly router = inject(Router);
+
+  get user(): AdminUser | null {
+    const raw = localStorage.getItem(USER_KEY);
+    if (!raw) {
+      return null;
+    }
+    try {
+      return JSON.parse(raw) as AdminUser;
+    } catch {
+      this.clearSession();
+      return null;
+    }
+  }
+
+  hasSession(): boolean {
+    return Boolean(localStorage.getItem(ACCESS_KEY) || localStorage.getItem(REFRESH_KEY));
+  }
+
+  async login(email: string, password: string): Promise<AdminUser> {
+    const result = await firstValueFrom(
+      this.http.post<AuthResult>('/api/v1/auth/login', { email, password }),
+    );
+    this.storeSession(result);
+    return result.user;
+  }
+
+  async logout(): Promise<void> {
+    const refreshToken = localStorage.getItem(REFRESH_KEY);
+    this.clearSession();
+    if (refreshToken) {
+      await firstValueFrom(this.http.post('/api/v1/auth/logout', { refreshToken })).catch(() => null);
+    }
+    await this.router.navigateByUrl('/admin/login');
+  }
+
+  async dashboard(): Promise<Dashboard> {
+    return this.withAuth((headers) =>
+      firstValueFrom(this.http.get<Dashboard>('/api/v1/dashboard/financials', { headers })),
+    );
+  }
+
+  private async withAuth<T>(request: (headers: HttpHeaders) => Promise<T>): Promise<T> {
+    const accessToken = localStorage.getItem(ACCESS_KEY);
+    if (!accessToken) {
+      await this.refresh();
+    }
+    try {
+      return await request(this.authHeaders());
+    } catch (error: unknown) {
+      if (isUnauthorized(error)) {
+        await this.refresh();
+        return request(this.authHeaders());
+      }
+      throw error;
+    }
+  }
+
+  private async refresh(): Promise<void> {
+    const refreshToken = localStorage.getItem(REFRESH_KEY);
+    if (!refreshToken) {
+      this.clearSession();
+      throw new Error('Authentication required');
+    }
+    try {
+      const result = await firstValueFrom(
+        this.http.post<AuthResult>('/api/v1/auth/refresh', { refreshToken }),
+      );
+      this.storeSession(result);
+    } catch {
+      this.clearSession();
+      throw new Error('Authentication required');
+    }
+  }
+
+  private authHeaders(): HttpHeaders {
+    const accessToken = localStorage.getItem(ACCESS_KEY);
+    if (!accessToken) {
+      throw new Error('Authentication required');
+    }
+    return new HttpHeaders({ Authorization: `Bearer ${accessToken}` });
+  }
+
+  private storeSession(result: AuthResult): void {
+    localStorage.setItem(ACCESS_KEY, result.accessToken);
+    localStorage.setItem(REFRESH_KEY, result.refreshToken);
+    localStorage.setItem(USER_KEY, JSON.stringify(result.user));
+  }
+
+  private clearSession(): void {
+    localStorage.removeItem(ACCESS_KEY);
+    localStorage.removeItem(REFRESH_KEY);
+    localStorage.removeItem(USER_KEY);
+  }
+}
+
+function isUnauthorized(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'status' in error && error.status === 401;
+}
