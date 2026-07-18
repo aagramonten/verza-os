@@ -8,14 +8,14 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
     <header>
       <div>
         <h1>Vera · Verza Garden</h1>
-        <p>Asistente de cotizaciones</p>
+        <p>Cotiza tu proyecto en minutos</p>
       </div>
       <div class="right">
         @if (leadReference(); as ref) {
           <span class="ref">{{ ref }}</span>
         }
         <button type="button" class="new" (click)="newConversation.emit()">
-          Nueva conversación
+          Nueva
         </button>
       </div>
     </header>

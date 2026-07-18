@@ -35,7 +35,11 @@ import { QuickActionsComponent } from './quick-actions.component';
         <p class="restoring">Recuperando tu conversación…</p>
       }
 
-      <app-message-list [messages]="store.messages()" [showTyping]="store.sending()" />
+      <app-message-list
+        [messages]="store.messages()"
+        [showTyping]="store.sending()"
+        (starterSelected)="store.send($event)"
+      />
 
       @if (store.awaitingConfirmation() && store.summary(); as summary) {
         <app-summary-card
@@ -47,7 +51,7 @@ import { QuickActionsComponent } from './quick-actions.component';
       }
 
       @if (store.confirmed()) {
-        <p class="done">✅ ¡Gracias! Tu información quedó registrada. El equipo de Verza Garden te contactará.</p>
+        <p class="done">✅ Listo. El equipo de Verza Garden te contactará pronto.</p>
       } @else if (!store.awaitingConfirmation()) {
         <app-quick-actions
           [disabled]="!store.canSend() || store.uploading()"
@@ -55,9 +59,6 @@ import { QuickActionsComponent } from './quick-actions.component';
           (photosSelected)="store.uploadPhotos($event)"
           (requestVisit)="store.requestVisit()"
           (skipMeasurements)="store.skipMeasurements()"
-          (hasBudget)="store.hasBudget()"
-          (wantsLowMaintenance)="store.wantsLowMaintenance()"
-          (wantsLuxury)="store.wantsLuxury()"
         />
         @if (store.uploading()) {
           <p class="uploading">Subiendo foto…</p>
