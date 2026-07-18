@@ -1,9 +1,11 @@
 import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { AdminApiService, type Dashboard } from './admin-api.service';
 
 @Component({
   selector: 'app-admin-dashboard',
   standalone: true,
+  imports: [RouterLink],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <main class="dashboard">
@@ -15,7 +17,10 @@ import { AdminApiService, type Dashboard } from './admin-api.service';
             <p class="period">{{ data.period.label }}</p>
           }
         </div>
-        <button type="button" class="ghost" (click)="logout()">Sign out</button>
+        <nav class="actions">
+          <a routerLink="/admin/leads" class="ghost">Leads</a>
+          <button type="button" class="ghost" (click)="logout()">Sign out</button>
+        </nav>
       </header>
 
       @if (dashboard(); as data) {
@@ -151,14 +156,18 @@ import { AdminApiService, type Dashboard } from './admin-api.service';
     h1 { font-size: 1.8rem; }
     h2 { font-size: 1rem; }
     .eyebrow, .period { color: #617164; font-size: 0.82rem; font-weight: 750; }
+    .actions { display: flex; gap: 10px; }
     .ghost {
+      display: inline-block;
       border: 1px solid #cfc7b8;
       border-radius: 6px;
       padding: 10px 14px;
       background: #fffdf8;
       color: #23352c;
       font-weight: 750;
+      font-size: 0.9rem;
       cursor: pointer;
+      text-decoration: none;
     }
     .hero-grid, .metric-grid, .split, .panel {
       max-width: 1120px;

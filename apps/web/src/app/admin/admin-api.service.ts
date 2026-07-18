@@ -75,6 +75,47 @@ export interface Dashboard {
   };
 }
 
+export type FollowUpStatus = 'NEW' | 'CONTACTED' | 'IN_FOLLOW_UP' | 'CLOSED';
+
+export interface LeadCustomer {
+  name: string | null;
+  phone: string | null;
+  email: string | null;
+  municipality: string | null;
+}
+
+export interface LeadListItem {
+  id: string;
+  referenceNumber: string;
+  status: string;
+  followUpStatus: FollowUpStatus;
+  serviceType: string | null;
+  description: string | null;
+  budgetMinCents: number | null;
+  budgetMaxCents: number | null;
+  customer: LeadCustomer | null;
+  confirmedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LeadDetail extends LeadListItem {
+  desiredDate: string | null;
+  preferredVisitTime: string | null;
+  adminSummary: { lines?: Array<{ label: string; value: string }> } | null;
+  leadScore: number | null;
+  conversionBand: string | null;
+  suggestedNextAction: string | null;
+  photoCount: number;
+}
+
+export interface LeadPage {
+  items: LeadListItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 const ACCESS_KEY = 'verza.admin.accessToken';
 const REFRESH_KEY = 'verza.admin.refreshToken';
 const USER_KEY = 'verza.admin.user';
@@ -121,6 +162,27 @@ export class AdminApiService {
   async dashboard(): Promise<Dashboard> {
     return this.withAuth((headers) =>
       firstValueFrom(this.http.get<Dashboard>('/api/v1/dashboard/financials', { headers })),
+    );
+  }
+
+  async leads(followUpStatus?: FollowUpStatus): Promise<LeadPage> {
+    const query = followUpStatus ? `?followUpStatus=${followUpStatus}` : '';
+    return this.withAuth((headers) =>
+      firstValueFrom(this.http.get<LeadPage>(`/api/v1/leads${query}`, { headers })),
+    );
+  }
+
+  async leadDetail(id: string): Promise<LeadDetail> {
+    return this.withAuth((headers) =>
+      firstValueFrom(this.http.get<LeadDetail>(`/api/v1/leads/${id}`, { headers })),
+    );
+  }
+
+  async updateLeadFollowUp(id: string, followUpStatus: FollowUpStatus): Promise<LeadDetail> {
+    return this.withAuth((headers) =>
+      firstValueFrom(
+        this.http.patch<LeadDetail>(`/api/v1/leads/${id}`, { followUpStatus }, { headers }),
+      ),
     );
   }
 
