@@ -19,6 +19,9 @@ const envSchema = z
     DEFAULT_COMPANY_SLUG: z.string().min(1),
     SEED_OWNER_EMAIL: z.string().email(),
     SEED_OWNER_NAME: z.string().min(1),
+    // Optional: when set, the seed gives the owner a login password. Empty
+    // means "no password" (the chat MVP shipped without owner login).
+    SEED_OWNER_PASSWORD: z.string().default(''),
     STORAGE_DRIVER: z.enum(['local']).default('local'),
     STORAGE_LOCAL_DIR: z.string().min(1).default('./uploads'),
     AI_ENABLED: z
@@ -30,6 +33,13 @@ const envSchema = z
     AI_MODEL: z.string().default(''),
     RATE_LIMIT_PUBLIC_RPM: z.coerce.number().int().positive().default(30),
     RESUME_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(30),
+    // Admin/owner console authentication. The secret signs stateless HS256
+    // access tokens; it must be long and random. Refresh tokens are opaque and
+    // stored hashed, so only this secret needs protecting for access tokens.
+    AUTH_JWT_SECRET: z.string().min(32, 'AUTH_JWT_SECRET must be at least 32 characters'),
+    AUTH_ACCESS_TTL_MIN: z.coerce.number().int().positive().max(1440).default(15),
+    AUTH_REFRESH_TTL_DAYS: z.coerce.number().int().positive().max(365).default(30),
+    AUTH_LOGIN_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(10),
   })
   .superRefine((env, ctx) => {
     if (env.AI_ENABLED) {
