@@ -37,6 +37,16 @@ enum LeadStatus {
   ARCHIVED
 }
 
+// Owner-facing sales follow-up lifecycle. Independent of the intake pipeline
+// (LeadStatus): a lead can be READY_FOR_REVIEW and still be NEW here until a
+// human contacts the customer.
+enum FollowUpStatus {
+  NEW
+  CONTACTED
+  IN_FOLLOW_UP
+  CLOSED
+}
+
 enum ChatSessionState {
   STARTED
   COLLECTING_CONTACT
@@ -308,6 +318,8 @@ model Lead {
   preferredVisitTime  String?
   confirmedAt         DateTime?
   adminSummary        Json?
+  // Owner-facing follow-up state; see FollowUpStatus.
+  followUpStatus      FollowUpStatus  @default(NEW)
   // Working merge store for the Vera conversation (Day 3): validated field
   // values plus the set of customer-confirmed field names. Authoritative for
   // merge decisions and summary generation; typed columns above mirror it.
@@ -331,6 +343,7 @@ model Lead {
   projects      Project[]
 
   @@index([companyId, status])
+  @@index([companyId, followUpStatus])
   @@index([companyId, createdAt])
   @@map("leads")
 }

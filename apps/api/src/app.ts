@@ -8,6 +8,7 @@ import { errorHandler, notFoundHandler } from './shared/http/problem.js';
 import { createChatModule, type ChatModuleOverrides } from './modules/chat/index.js';
 import { createAuthModule, type AuthModuleOverrides } from './modules/auth/index.js';
 import { createFinancialsModule } from './modules/financials/index.js';
+import { createLeadsModule } from './modules/leads/index.js';
 
 export interface AppDependencies {
   env: Env;
@@ -86,6 +87,9 @@ export function buildApp({
 
   const financials = createFinancialsModule(env, prisma, { authenticate: auth.authenticate });
   app.use('/api/v1', financials.router);
+
+  const leads = createLeadsModule(env, prisma, { authenticate: auth.authenticate });
+  app.use('/api/v1', leads.router);
 
   app.use(notFoundHandler);
   app.use(errorHandler);
