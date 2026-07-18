@@ -43,10 +43,10 @@ export class StaticKnowledgeService implements KnowledgeService {
       materials: selectTopics(MATERIAL_KNOWLEDGE, text, 6),
       upsellRules: selectTopics(UPSELL_RULES, text, 5),
       conversationTips: [
-        'Antes de preguntar, explica brevemente el criterio profesional detrás de la pregunta.',
-        'Si el cliente no sabe medidas, ofrece fotos, dirección, Google Maps, dimensiones aproximadas o survey.',
+        'Pregunta directo, sin preámbulos; explica el porqué solo si el cliente lo cuestiona.',
+        'Si el cliente no sabe medidas, ofrece fotos o el largo por el ancho aproximado y sigue.',
         'No bloquees la conversación por datos que se pueden confirmar en la visita.',
-        'Toda recomendación debe sentirse útil, no como venta forzada.',
+        'Toda recomendación debe caber en una frase y sentirse útil, no como venta forzada.',
       ],
     };
   }
