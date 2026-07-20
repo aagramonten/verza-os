@@ -1,0 +1,160 @@
+/**
+ * Vera embeddable widget.
+ *
+ * Drop-in launcher for the Vera quote assistant. Add one line to any page:
+ *
+ *   <script src="https://cotizar.verzagarden.com/widget.js" async></script>
+ *
+ * It injects a floating "Asistente" button (bottom-right) that opens Vera in a
+ * panel (an iframe to the chat). On the visitor's first visit it opens once by
+ * itself; after that it only opens on click. All markup and styles live in a
+ * shadow root so nothing leaks into — or is broken by — the host page.
+ *
+ * Config via data-* attributes on the <script> tag (all optional):
+ *   data-url      Chat URL to load           (default: script origin)
+ *   data-label    Button text                (default: "Asistente")
+ *   data-auto     "first" | "always" | "never" auto-open behavior (default: "first")
+ *   data-color    Accent color               (default: "#5c6b3a")
+ */
+(function () {
+  'use strict';
+
+  // Guard against double injection if the snippet is added more than once.
+  if (window.__veraWidgetLoaded) return;
+  window.__veraWidgetLoaded = true;
+
+  var script = document.currentScript;
+  var origin = (function () {
+    try {
+      return new URL(script.src).origin;
+    } catch (e) {
+      return 'https://cotizar.verzagarden.com';
+    }
+  })();
+
+  var cfg = {
+    url: (script && script.getAttribute('data-url')) || origin + '/cotizar',
+    label: (script && script.getAttribute('data-label')) || 'Asistente',
+    auto: (script && script.getAttribute('data-auto')) || 'first',
+    color: (script && script.getAttribute('data-color')) || '#5c6b3a',
+  };
+
+  var STORAGE_KEY = 'vera_widget_opened';
+
+  function ready(fn) {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', fn);
+    } else {
+      fn();
+    }
+  }
+
+  ready(function () {
+    var host = document.createElement('div');
+    host.setAttribute('aria-live', 'polite');
+    host.style.cssText = 'position:fixed;z-index:2147483647;';
+    document.body.appendChild(host);
+    var root = host.attachShadow ? host.attachShadow({ mode: 'open' }) : host;
+
+    var style = document.createElement('style');
+    style.textContent = [
+      ':host,*{box-sizing:border-box;}',
+      '.launcher{position:fixed;right:20px;bottom:20px;display:inline-flex;align-items:center;',
+      'gap:8px;padding:12px 18px;border:none;border-radius:999px;background:' + cfg.color + ';',
+      'color:#fff;font:600 15px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;',
+      'cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.28);transition:transform .15s ease,opacity .15s ease;}',
+      '.launcher:hover{transform:translateY(-2px);}',
+      '.launcher .leaf{font-size:18px;line-height:1;}',
+      '.launcher.hidden{opacity:0;pointer-events:none;transform:scale(.8);}',
+      '.panel{position:fixed;right:20px;bottom:20px;width:400px;height:640px;max-width:calc(100vw - 40px);',
+      'max-height:calc(100dvh - 40px);background:#fff;border-radius:16px;overflow:hidden;',
+      'box-shadow:0 18px 50px rgba(0,0,0,.32);display:flex;flex-direction:column;',
+      'opacity:0;transform:translateY(16px) scale(.98);pointer-events:none;transition:opacity .2s ease,transform .2s ease;}',
+      '.panel.open{opacity:1;transform:none;pointer-events:auto;}',
+      '.bar{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;',
+      'background:' + cfg.color + ';color:#fff;flex:0 0 auto;}',
+      '.bar .title{display:flex;align-items:center;gap:8px;font:600 15px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;}',
+      '.bar .title small{display:block;font-weight:400;font-size:11px;opacity:.85;margin-top:2px;}',
+      '.bar button{background:transparent;border:none;color:#fff;font-size:22px;line-height:1;',
+      'cursor:pointer;padding:2px 6px;border-radius:6px;opacity:.9;}',
+      '.bar button:hover{opacity:1;background:rgba(255,255,255,.15);}',
+      '.frame{flex:1 1 auto;border:none;width:100%;background:#ede8de;}',
+      '@media (max-width:480px){',
+      '.panel{right:0;bottom:0;width:100vw;height:100dvh;max-width:100vw;max-height:100dvh;border-radius:0;}',
+      '.launcher{right:16px;bottom:16px;}}',
+    ].join('');
+    root.appendChild(style);
+
+    var launcher = document.createElement('button');
+    launcher.className = 'launcher';
+    launcher.type = 'button';
+    launcher.setAttribute('aria-label', 'Abrir asistente Vera');
+    launcher.innerHTML = '<span class="leaf" aria-hidden="true">🌿</span><span></span>';
+    launcher.querySelector('span:last-child').textContent = cfg.label;
+    root.appendChild(launcher);
+
+    var panel = document.createElement('div');
+    panel.className = 'panel';
+    panel.setAttribute('role', 'dialog');
+    panel.setAttribute('aria-label', 'Asistente Vera');
+    panel.innerHTML =
+      '<div class="bar"><span class="title"><span aria-hidden="true">🌿</span>' +
+      '<span>Vera<small>Cotiza tu proyecto, gratis</small></span></span>' +
+      '<button type="button" aria-label="Cerrar">&times;</button></div>';
+    var frameHolder = document.createElement('div');
+    frameHolder.style.cssText = 'flex:1 1 auto;display:flex;';
+    panel.appendChild(frameHolder);
+    root.appendChild(panel);
+
+    var frame = null;
+    var isOpen = false;
+
+    function ensureFrame() {
+      if (frame) return;
+      frame = document.createElement('iframe');
+      frame.className = 'frame';
+      frame.setAttribute('title', 'Chat con Vera');
+      frame.setAttribute('allow', 'clipboard-write');
+      frame.src = cfg.url;
+      frameHolder.appendChild(frame);
+    }
+
+    function open() {
+      if (isOpen) return;
+      isOpen = true;
+      ensureFrame();
+      panel.classList.add('open');
+      launcher.classList.add('hidden');
+      try {
+        localStorage.setItem(STORAGE_KEY, '1');
+      } catch (e) {
+        /* private mode: ignore */
+      }
+    }
+
+    function close() {
+      if (!isOpen) return;
+      isOpen = false;
+      panel.classList.remove('open');
+      launcher.classList.remove('hidden');
+    }
+
+    launcher.addEventListener('click', open);
+    panel.querySelector('.bar button').addEventListener('click', close);
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && isOpen) close();
+    });
+
+    // Auto-open policy.
+    var seen = false;
+    try {
+      seen = localStorage.getItem(STORAGE_KEY) === '1';
+    } catch (e) {
+      /* ignore */
+    }
+    if (cfg.auto === 'always' || (cfg.auto === 'first' && !seen)) {
+      // Small delay so the widget doesn't fight the host page's own load.
+      setTimeout(open, 1200);
+    }
+  });
+})();
