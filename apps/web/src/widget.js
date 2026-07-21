@@ -69,8 +69,12 @@
       '.panel{position:fixed;right:20px;bottom:20px;width:400px;height:640px;max-width:calc(100vw - 40px);',
       'max-height:calc(100dvh - 40px);background:#fff;border-radius:16px;overflow:hidden;',
       'box-shadow:0 18px 50px rgba(0,0,0,.32);display:flex;flex-direction:column;',
-      'opacity:0;transform:translateY(16px) scale(.98);pointer-events:none;transition:opacity .2s ease,transform .2s ease;}',
-      '.panel.open{opacity:1;transform:none;pointer-events:auto;}',
+      // visibility:hidden while closed: iOS Safari does not reliably honor
+      // pointer-events:none over iframes, which left the closed panel eating
+      // every touch and froze page scroll on phones.
+      'opacity:0;transform:translateY(16px) scale(.98);pointer-events:none;visibility:hidden;',
+      'transition:opacity .2s ease,transform .2s ease,visibility .2s;}',
+      '.panel.open{opacity:1;transform:none;pointer-events:auto;visibility:visible;}',
       '.bar{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;',
       'background:' + cfg.color + ';color:#fff;flex:0 0 auto;}',
       '.bar .title{display:flex;align-items:center;gap:8px;font:600 15px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;}',
@@ -109,6 +113,40 @@
     var frame = null;
     var isOpen = false;
 
+    // On phones the panel is fullscreen, so freeze the host page underneath
+    // and restore it exactly on close (the position:fixed trick is the only
+    // reliable scroll lock on iOS Safari).
+    var fullscreenMq = window.matchMedia ? window.matchMedia('(max-width: 480px)') : null;
+    var savedScrollY = 0;
+    var savedBodyStyle = null;
+
+    function lockScroll() {
+      if (!fullscreenMq || !fullscreenMq.matches || savedBodyStyle !== null) return;
+      var b = document.body;
+      savedScrollY = window.scrollY || document.documentElement.scrollTop || 0;
+      savedBodyStyle = {
+        position: b.style.position,
+        top: b.style.top,
+        width: b.style.width,
+        overflow: b.style.overflow,
+      };
+      b.style.position = 'fixed';
+      b.style.top = -savedScrollY + 'px';
+      b.style.width = '100%';
+      b.style.overflow = 'hidden';
+    }
+
+    function unlockScroll() {
+      if (savedBodyStyle === null) return;
+      var b = document.body;
+      b.style.position = savedBodyStyle.position;
+      b.style.top = savedBodyStyle.top;
+      b.style.width = savedBodyStyle.width;
+      b.style.overflow = savedBodyStyle.overflow;
+      savedBodyStyle = null;
+      window.scrollTo(0, savedScrollY);
+    }
+
     function ensureFrame() {
       if (frame) return;
       frame = document.createElement('iframe');
@@ -123,6 +161,7 @@
       if (isOpen) return;
       isOpen = true;
       ensureFrame();
+      lockScroll();
       panel.classList.add('open');
       launcher.classList.add('hidden');
       try {
@@ -137,6 +176,7 @@
       isOpen = false;
       panel.classList.remove('open');
       launcher.classList.remove('hidden');
+      unlockScroll();
     }
 
     launcher.addEventListener('click', open);
