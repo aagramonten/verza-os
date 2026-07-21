@@ -20,6 +20,12 @@ export const routes: Routes = [
       import('./admin/admin-leads.component').then((m) => m.AdminLeadsComponent),
   },
   {
+    path: 'admin/agenda',
+    canActivate: [adminAuthGuard],
+    loadComponent: () =>
+      import('./admin/admin-agenda.component').then((m) => m.AdminAgendaComponent),
+  },
+  {
     path: 'cotizar',
     loadComponent: () => import('./cotizar/cotizar.component').then((m) => m.CotizarComponent),
   },

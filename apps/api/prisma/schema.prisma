@@ -47,6 +47,16 @@ enum FollowUpStatus {
   CLOSED
 }
 
+// Lifecycle of an owner-scheduled site visit. The owner (never Vera) confirms
+// appointments against their own availability.
+enum AppointmentStatus {
+  PROPOSED
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
 enum ChatSessionState {
   STARTED
   COLLECTING_CONTACT
@@ -341,6 +351,7 @@ model Lead {
   confirmations LeadConfirmation[]
   estimates     EstimateRange[]
   projects      Project[]
+  appointments  Appointment[]
 
   @@index([companyId, status])
   @@index([companyId, followUpStatus])
@@ -696,4 +707,68 @@ model Payment {
   @@index([companyId, projectId])
   @@index([companyId, receivedAt])
   @@map("payments")
+}
+
+// ── Scheduling (owner agenda, availability, site visits) ─────────────
+
+// A scheduled site visit for a lead. scheduledAt is a UTC instant; the owner
+// works in Puerto Rico local time (fixed UTC-4, no DST — see financials period).
+model Appointment {
+  id           String            @id @default(uuid())
+  companyId    String
+  leadId       String
+  customerId   String?
+  scheduledAt  DateTime
+  durationMin  Int               @default(60)
+  status       AppointmentStatus @default(CONFIRMED)
+  locationText String?
+  notes        String?           @db.Text
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  lead Lead @relation(fields: [leadId], references: [id])
+
+  @@index([companyId, scheduledAt])
+  @@index([companyId, leadId])
+  @@map("appointments")
+}
+
+// Recurring weekly working window (owner availability). Minutes are measured
+// from local midnight; weekday is 0=Sunday..6=Saturday in PR local time.
+model AvailabilityWindow {
+  id          String   @id @default(uuid())
+  companyId   String
+  weekday     Int
+  startMinute Int
+  endMinute   Int
+  createdAt   DateTime @default(now())
+
+  @@index([companyId])
+  @@map("availability_windows")
+}
+
+// One-off block of time the owner is unavailable (vacation, other job, etc).
+model AvailabilityBlock {
+  id        String   @id @default(uuid())
+  companyId String
+  startAt   DateTime
+  endAt     DateTime
+  reason    String?
+  createdAt DateTime @default(now())
+
+  @@index([companyId, startAt])
+  @@map("availability_blocks")
+}
+
+// Singleton per company: default visit length and the slot granularity shown
+// in the scheduler.
+model SchedulingSettings {
+  id                  String   @id @default(uuid())
+  companyId           String   @unique
+  defaultVisitMinutes Int      @default(60)
+  slotMinutes         Int      @default(30)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@map("scheduling_settings")
 }

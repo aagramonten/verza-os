@@ -116,6 +116,65 @@ export interface LeadPage {
   offset: number;
 }
 
+// ── Scheduling / agenda ────────────────────────────────────────────
+
+export type AppointmentStatus = 'PROPOSED' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
+
+export interface AvailabilityWindow {
+  weekday: number; // 0=Sun..6=Sat
+  startMinute: number;
+  endMinute: number;
+}
+
+export interface AvailabilityBlock {
+  id: string;
+  startAt: string;
+  endAt: string;
+  reason: string | null;
+}
+
+export interface Availability {
+  windows: AvailabilityWindow[];
+  blocks: AvailabilityBlock[];
+  settings: { defaultVisitMinutes: number; slotMinutes: number };
+}
+
+export interface Appointment {
+  id: string;
+  leadId: string;
+  scheduledAt: string;
+  durationMin: number;
+  status: AppointmentStatus;
+  locationText: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  lead: {
+    referenceNumber: string;
+    customerName: string | null;
+    customerPhone: string | null;
+    municipality: string | null;
+    serviceType: string | null;
+  } | null;
+}
+
+export interface Slot {
+  startAt: string;
+  endAt: string;
+  free: boolean;
+}
+
+export interface Conflict {
+  kind: 'appointment' | 'block' | 'outside-hours';
+  startAt: string;
+  endAt: string;
+}
+
+export interface AppointmentResult {
+  appointment: Appointment;
+  conflicts: Conflict[];
+}
+
 const ACCESS_KEY = 'verza.admin.accessToken';
 const REFRESH_KEY = 'verza.admin.refreshToken';
 const USER_KEY = 'verza.admin.user';
@@ -182,6 +241,86 @@ export class AdminApiService {
     return this.withAuth((headers) =>
       firstValueFrom(
         this.http.patch<LeadDetail>(`/api/v1/leads/${id}`, { followUpStatus }, { headers }),
+      ),
+    );
+  }
+
+  // ── Scheduling ─────────────────────────────────────────────────────
+
+  async availability(): Promise<Availability> {
+    return this.withAuth((headers) =>
+      firstValueFrom(this.http.get<Availability>('/api/v1/availability', { headers })),
+    );
+  }
+
+  async saveAvailability(input: {
+    windows: AvailabilityWindow[];
+    defaultVisitMinutes?: number;
+    slotMinutes?: number;
+  }): Promise<Availability> {
+    return this.withAuth((headers) =>
+      firstValueFrom(this.http.put<Availability>('/api/v1/availability', input, { headers })),
+    );
+  }
+
+  async addBlock(startAt: string, endAt: string, reason: string | null): Promise<Availability> {
+    return this.withAuth((headers) =>
+      firstValueFrom(
+        this.http.post<Availability>(
+          '/api/v1/availability/blocks',
+          { startAt, endAt, reason },
+          { headers },
+        ),
+      ),
+    );
+  }
+
+  async removeBlock(id: string): Promise<Availability> {
+    return this.withAuth((headers) =>
+      firstValueFrom(this.http.delete<Availability>(`/api/v1/availability/blocks/${id}`, { headers })),
+    );
+  }
+
+  async appointments(fromIso: string, toIso: string): Promise<Appointment[]> {
+    return this.withAuth((headers) =>
+      firstValueFrom(
+        this.http.get<Appointment[]>(
+          `/api/v1/appointments?from=${encodeURIComponent(fromIso)}&to=${encodeURIComponent(toIso)}`,
+          { headers },
+        ),
+      ),
+    );
+  }
+
+  async slots(fromIso: string, toIso: string): Promise<Slot[]> {
+    return this.withAuth((headers) =>
+      firstValueFrom(
+        this.http.get<Slot[]>(
+          `/api/v1/availability/slots?from=${encodeURIComponent(fromIso)}&to=${encodeURIComponent(toIso)}`,
+          { headers },
+        ),
+      ),
+    );
+  }
+
+  async createAppointment(input: {
+    leadId: string;
+    scheduledAt: string;
+    durationMin?: number;
+    notes?: string | null;
+  }): Promise<AppointmentResult> {
+    return this.withAuth((headers) =>
+      firstValueFrom(this.http.post<AppointmentResult>('/api/v1/appointments', input, { headers })),
+    );
+  }
+
+  async updateAppointment(
+    id: string,
+    input: { scheduledAt?: string; status?: AppointmentStatus; notes?: string | null },
+  ): Promise<AppointmentResult> {
+    return this.withAuth((headers) =>
+      firstValueFrom(
+        this.http.patch<AppointmentResult>(`/api/v1/appointments/${id}`, input, { headers }),
       ),
     );
   }

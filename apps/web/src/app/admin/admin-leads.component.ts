@@ -1,11 +1,34 @@
 import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import {
   AdminApiService,
   type FollowUpStatus,
   type LeadDetail,
   type LeadListItem,
+  type Slot,
 } from './admin-api.service';
+
+// Puerto Rico fixed UTC-4 (matches backend) for the visit scheduler.
+const PR_OFFSET_MIN = -4 * 60;
+function prDayRange(dateStr: string): { fromIso: string; toIso: string } {
+  const [y, mo, day] = dateStr.split('-').map(Number);
+  const from = new Date(Date.UTC(y, mo - 1, day, 0, 0) - PR_OFFSET_MIN * 60_000);
+  const to = new Date(from.getTime() + 86_400_000);
+  return { fromIso: from.toISOString(), toIso: to.toISOString() };
+}
+function slotTime(iso: string): string {
+  const d = new Date(new Date(iso).getTime() + PR_OFFSET_MIN * 60_000);
+  const h = d.getUTCHours();
+  const m = d.getUTCMinutes();
+  const ampm = h < 12 ? 'am' : 'pm';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(m).padStart(2, '0')}${ampm}`;
+}
+function todayPr(): string {
+  const d = new Date(Date.now() + PR_OFFSET_MIN * 60_000);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+}
 
 const FOLLOW_UP_LABELS: Record<FollowUpStatus, string> = {
   NEW: 'Nuevo',
@@ -30,7 +53,7 @@ const FILTERS: Array<{ value: FollowUpStatus | null; label: string }> = [
 @Component({
   selector: 'app-admin-leads',
   standalone: true,
-  imports: [RouterLink],
+  imports: [RouterLink, FormsModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <main class="page">
@@ -42,6 +65,7 @@ const FILTERS: Array<{ value: FollowUpStatus | null; label: string }> = [
         </div>
         <nav>
           <a routerLink="/admin" class="ghost">Dashboard</a>
+          <a routerLink="/admin/agenda" class="ghost">Agenda</a>
           <button type="button" class="ghost" (click)="logout()">Salir</button>
         </nav>
       </header>
@@ -98,7 +122,8 @@ const FILTERS: Array<{ value: FollowUpStatus | null; label: string }> = [
                       <div><dt>Email</dt><dd>{{ d.customer?.email || '—' }}</dd></div>
                       <div><dt>Municipio</dt><dd>{{ d.customer?.municipality || '—' }}</dd></div>
                       <div><dt>Presupuesto</dt><dd>{{ budget(d) }}</dd></div>
-                      <div><dt>Fecha deseada</dt><dd>{{ d.desiredDate ? date(d.desiredDate) : '—' }}</dd></div>
+                      <div><dt>Fecha preferida</dt><dd>{{ d.desiredDate ? date(d.desiredDate) : '—' }}</dd></div>
+                      <div><dt>Horario preferido</dt><dd>{{ d.preferredVisitTime || '—' }}</dd></div>
                       <div><dt>Fotos</dt><dd>{{ d.photoCount }}</dd></div>
                     </dl>
                     @if (d.description) {
@@ -125,6 +150,48 @@ const FILTERS: Array<{ value: FollowUpStatus | null; label: string }> = [
                         }
                       </select>
                     </label>
+
+                    <div class="scheduler">
+                      @if (schedulingId() !== d.id) {
+                        <button type="button" class="schedule-btn" (click)="openScheduler(d)">
+                          📅 Agendar visita
+                        </button>
+                      } @else {
+                        <div class="sched-panel">
+                          <div class="sched-row">
+                            <label>Día
+                              <input type="date" [(ngModel)]="scheduleDate" (change)="loadSlots()" />
+                            </label>
+                            <a routerLink="/admin/agenda" class="mini-link">Ver agenda completa</a>
+                          </div>
+                          @if (scheduleMsg()) {
+                            <p class="sched-msg" [class.warn]="scheduleWarn()">{{ scheduleMsg() }}</p>
+                          }
+                          @if (slotsLoading()) {
+                            <p class="muted">Buscando horarios libres…</p>
+                          } @else if (freeSlots().length === 0) {
+                            <p class="muted">
+                              No hay horarios libres ese día (revisa tus horarios en la Agenda).
+                            </p>
+                          } @else {
+                            <div class="slots">
+                              @for (slot of freeSlots(); track slot.startAt) {
+                                <button
+                                  type="button"
+                                  [disabled]="saving()"
+                                  (click)="pickSlot(d, slot)"
+                                >
+                                  {{ slotTimeLabel(slot.startAt) }}
+                                </button>
+                              }
+                            </div>
+                          }
+                          <button type="button" class="mini-cancel" (click)="closeScheduler()">
+                            Cancelar
+                          </button>
+                        </div>
+                      }
+                    </div>
                   } @else {
                     <p class="loading">Cargando detalle…</p>
                   }
@@ -269,6 +336,29 @@ const FILTERS: Array<{ value: FollowUpStatus | null; label: string }> = [
       background: #fff;
       font: inherit;
     }
+    .scheduler { margin-top: 14px; }
+    .schedule-btn {
+      border: 1px solid #4f795d; border-radius: 6px; padding: 9px 14px; background: #eef3ee;
+      color: #2f4a38; font-weight: 750; font-size: 0.88rem; cursor: pointer;
+    }
+    .sched-panel {
+      border: 1px solid #d8d1c2; border-radius: 8px; padding: 12px; background: #fbf9f3;
+      display: grid; gap: 10px;
+    }
+    .sched-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+    .sched-row label { display: flex; gap: 8px; align-items: center; font-size: 0.85rem; font-weight: 700; }
+    .sched-row input { padding: 7px; border: 1px solid #cfc7b8; border-radius: 5px; font: inherit; }
+    .mini-link { font-size: 0.8rem; color: #4f795d; font-weight: 700; }
+    .sched-msg { margin: 0; font-size: 0.85rem; color: #2f4a38; font-weight: 700; }
+    .sched-msg.warn { color: #7d5a25; }
+    .slots { display: flex; flex-wrap: wrap; gap: 6px; }
+    .slots button {
+      border: 1px solid #cfc7b8; border-radius: 16px; padding: 7px 12px; background: #fff;
+      color: #23352c; font-size: 0.82rem; font-weight: 700; cursor: pointer;
+    }
+    .slots button:hover:not(:disabled) { background: #eef3ee; border-color: #4f795d; }
+    .mini-cancel { justify-self: start; border: none; background: transparent; color: #7a2d1f; font-weight: 700; cursor: pointer; padding: 0; font-size: 0.82rem; }
+    .muted { color: #8a8577; font-size: 0.85rem; margin: 0; }
     .loading, .error {
       max-width: 980px;
       margin: 18px auto;
@@ -299,8 +389,84 @@ export class AdminLeadsComponent implements OnInit {
   protected readonly saving = signal(false);
   protected readonly error = signal('');
 
+  // Visit scheduler (inline, per lead)
+  protected readonly schedulingId = signal<string | null>(null);
+  protected readonly freeSlots = signal<Slot[]>([]);
+  protected readonly slotsLoading = signal(false);
+  protected readonly scheduleMsg = signal('');
+  protected readonly scheduleWarn = signal(false);
+  protected scheduleDate = '';
+
   ngOnInit(): void {
     void this.load();
+  }
+
+  protected openScheduler(lead: LeadDetail): void {
+    this.schedulingId.set(lead.id);
+    this.scheduleMsg.set('');
+    this.scheduleWarn.set(false);
+    this.freeSlots.set([]);
+    // Default to the customer's preferred date if it is in the future, else today.
+    const pref = lead.desiredDate ? lead.desiredDate.slice(0, 10) : '';
+    this.scheduleDate = pref && pref >= todayPr() ? pref : todayPr();
+    void this.loadSlots();
+  }
+
+  protected closeScheduler(): void {
+    this.schedulingId.set(null);
+    this.freeSlots.set([]);
+    this.scheduleMsg.set('');
+  }
+
+  protected async loadSlots(): Promise<void> {
+    if (!this.scheduleDate) return;
+    this.slotsLoading.set(true);
+    this.scheduleMsg.set('');
+    try {
+      const { fromIso, toIso } = prDayRange(this.scheduleDate);
+      const slots = await this.api.slots(fromIso, toIso);
+      this.freeSlots.set(slots.filter((s) => s.free));
+    } catch {
+      this.scheduleMsg.set('No se pudieron cargar los horarios.');
+      this.scheduleWarn.set(true);
+    } finally {
+      this.slotsLoading.set(false);
+    }
+  }
+
+  protected async pickSlot(lead: LeadDetail, slot: Slot): Promise<void> {
+    this.saving.set(true);
+    this.scheduleMsg.set('');
+    this.scheduleWarn.set(false);
+    try {
+      const res = await this.api.createAppointment({
+        leadId: lead.id,
+        scheduledAt: slot.startAt,
+      });
+      // Move the lead to follow-up so the board reflects that a visit is set.
+      const updated = await this.api.updateLeadFollowUp(lead.id, 'IN_FOLLOW_UP');
+      this.detail.set(updated);
+      this.leads.update((all) =>
+        all.map((l) => (l.id === lead.id ? { ...l, followUpStatus: updated.followUpStatus } : l)),
+      );
+      // Refresh availability first, then show the outcome (loadSlots clears the message).
+      await this.loadSlots();
+      if (res.conflicts.length > 0) {
+        this.scheduleWarn.set(true);
+        this.scheduleMsg.set('Visita agendada, pero ⚠️ hay un conflicto con otra cita o bloqueo.');
+      } else {
+        this.scheduleMsg.set('✅ Visita agendada. Aparece en tu Agenda.');
+      }
+    } catch {
+      this.scheduleWarn.set(true);
+      this.scheduleMsg.set('No se pudo agendar la visita.');
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected slotTimeLabel(iso: string): string {
+    return slotTime(iso);
   }
 
   protected setFilter(value: FollowUpStatus | null): void {
