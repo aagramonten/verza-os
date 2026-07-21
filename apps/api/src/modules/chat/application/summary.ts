@@ -58,6 +58,9 @@ export function buildSummary(
   if (hasBudget(collected)) {
     lines.push({ label: 'Presupuesto aproximado', value: formatBudget(collected) });
   }
+  // Visit preference (owner schedules the actual appointment against these).
+  push('Fecha preferida', 'desiredDate');
+  push('Horario preferido', 'preferredVisitTime', visitTimeEs);
 
   lines.push({ label: 'Fotos recibidas', value: String(photoCount) });
   return { lines, photoCount };
@@ -65,6 +68,19 @@ export function buildSummary(
 
 function boolEs(value: unknown): string {
   return value === true ? 'sí' : 'no';
+}
+
+/** Translate the common time-of-day values the AI may emit into Spanish; any
+ *  other free-text preference is shown as-is. */
+function visitTimeEs(value: unknown): string {
+  const map: Record<string, string> = {
+    morning: 'en la mañana',
+    afternoon: 'en la tarde',
+    evening: 'al atardecer',
+    night: 'en la noche',
+  };
+  const key = String(value).trim().toLowerCase();
+  return map[key] ?? String(value);
 }
 
 function formatMeasurements(collected: CollectedProjectState): string {
