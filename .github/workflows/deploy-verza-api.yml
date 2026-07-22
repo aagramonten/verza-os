@@ -1,0 +1,39 @@
+name: Deploy verza-api to Railway
+
+# Keeps the Railway backend in lockstep with main. Without this the backend
+# is deployed by hand, so a merged API change can sit undeployed while the
+# frontend already calls it — which surfaced as a 404 on /api/v1/leads.
+on:
+  push:
+    branches: [main]
+    # Only redeploy when something the API build actually depends on changes,
+    # so frontend/docs-only commits don't trigger a backend deploy.
+    paths:
+      - 'apps/api/**'
+      - 'packages/**'
+      - 'railway.json'
+      - '.github/workflows/deploy-verza-api.yml'
+  workflow_dispatch: {} # allow manual "Run workflow" from the Actions tab
+
+concurrency:
+  group: deploy-verza-api
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Deploy to Railway
+        # railway.json at the repo root drives the Docker build + healthcheck.
+        run: railway up --service verza-api --ci
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
