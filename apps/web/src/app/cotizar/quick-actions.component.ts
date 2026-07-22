@@ -31,6 +31,11 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
     </div>
   `,
   styles: `
+    /* margin-bottom:auto absorbs the leftover height only when the sibling
+       message list is not growing (the empty welcome state), which docks the
+       input to the bottom while keeping these actions next to the starters.
+       During a live conversation the list fills the space, so this is inert. */
+    :host { display: block; margin-bottom: auto; }
     .actions {
       display: flex;
       gap: 8px;
