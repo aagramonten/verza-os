@@ -196,7 +196,12 @@
     } catch (e) {
       /* ignore */
     }
-    if (cfg.auto === 'always' || (cfg.auto === 'first' && !seen)) {
+    // On phones the panel is fullscreen (see the max-width:480px block
+    // above), so auto-opening there would greet the visitor with a chat
+    // covering the whole page before they asked for it. Auto-open is
+    // desktop-only; mobile always starts as just the bubble.
+    var isMobile = fullscreenMq ? fullscreenMq.matches : false;
+    if (!isMobile && (cfg.auto === 'always' || (cfg.auto === 'first' && !seen))) {
       // Small delay so the widget doesn't fight the host page's own load.
       setTimeout(open, 1200);
     }
