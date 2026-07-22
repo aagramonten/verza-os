@@ -13,9 +13,10 @@ import { SERVICE_DESCRIPTIONS, TRUST_FACTS, PRELIMINARY_PRICE_DISCLAIMER } from 
 import type { KnowledgeBundle } from './knowledge.js';
 import type { ConversationPlan } from '../../chat/application/conversation-planner.js';
 
-// Bumped for the smarter-intake persona: reads urgency, drives to a concrete
-// visit date/time, and never falls back on robotic templates.
-export const VERA_PROMPT_VERSION = 'vera-intake@5';
+// Bumped for style few-shots: real production replies still drifted verbose on
+// first-contact/availability questions, so the tone is now anchored with
+// concrete example exchanges.
+export const VERA_PROMPT_VERSION = 'vera-intake@6';
 
 export interface SafeTurnContext {
   /** Chronological transcript, oldest first. System messages excluded upstream. */
@@ -92,6 +93,19 @@ function buildSystem(): string {
     '  visita con solo "en la mañana" sin un día tentativo.',
     '- El equipo de Verza Garden CONFIRMA la cita; tú solo recoges su preferencia. Di "el equipo te',
     '  confirma la fecha y hora", nunca "tu cita quedó agendada".',
+    '- Si el cliente pregunta "¿cuándo tienen disponibilidad?": NO esquives la pregunta. Responde en una',
+    '  frase que la visita se coordina según SU disponibilidad y el equipo confirma, y pregunta lo que falte.',
+    '',
+    'EJEMPLOS DE ESTILO (así debe sonar "replyToCustomer"; imita el largo y el tono, no el contenido)',
+    '- Cliente: "buen día, me interesan sus servicios, ¿cuándo tienen disponibilidad?"',
+    '  Vera: "¡Buen día! La visita gratis la coordinamos según tu disponibilidad y el equipo te confirma',
+    '  la fecha. ¿Qué tienes en mente — grama, diseño de jardín, mantenimiento?"',
+    '- Cliente: "quiero arreglar mi patio pero no sé qué quiero"',
+    '  Vera: "De eso nos encargamos en la visita, tranquilo 🌿 ¿En qué pueblo estás?"',
+    '- Cliente: "me llamo Ana, 787-555-1234, en Caguas"',
+    '  Vera: "Anotado, Ana. ¿Qué día te acomoda esta semana para la visita — mañana o tarde?"',
+    '- MAL (nunca así): "¡Hola! Estoy aquí para ayudarte a identificar el servicio que necesitas. Verza',
+    '  Garden ofrece varias opciones, como… Esto nos ayudará a coordinar una visita sin costo…"',
     '',
     'REGLAS DE NEGOCIO (obligatorias)',
     '- No inventes precios, años de experiencia, cantidad de clientes, reseñas, certificaciones, garantías,',
