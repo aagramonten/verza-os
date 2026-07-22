@@ -35,22 +35,34 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
       display: flex;
       gap: 8px;
       flex-wrap: wrap;
-      padding: 8px 16px 0;
+      padding: 10px 16px 2px;
     }
     label,
     button {
-      padding: 8px 14px;
-      border-radius: 20px;
+      display: inline-flex;
+      align-items: center;
+      padding: 8px 13px;
+      border-radius: 14px;
       border: 1px solid #d9d2c4;
-      background: #fdfaf5;
+      background: transparent;
       color: #5c6b3a;
-      font-size: 0.82rem;
+      font-size: 0.8rem;
+      font-weight: 500;
       cursor: pointer;
+      transition: background 0.15s ease, border-color 0.15s ease;
     }
+    label:hover,
+    button:hover:not(:disabled) { background: #e9e3d6; border-color: #c3bba7; }
+    label:focus-within,
+    button:focus-visible { outline: 2px solid #5c6b3a; outline-offset: 1px; }
     label.disabled,
     button:disabled {
       opacity: 0.5;
       cursor: not-allowed;
+    }
+    @media (max-width: 480px) {
+      label,
+      button { padding: 10px 14px; font-size: 0.84rem; }
     }
   `,
 })

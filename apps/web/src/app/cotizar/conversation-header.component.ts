@@ -6,10 +6,7 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <header>
-      <div>
-        <h1>Vera · Verza Garden</h1>
-        <p>Cotiza tu proyecto en minutos</p>
-      </div>
+      <span class="ctx">Verza Garden · Diseño de jardines</span>
       <div class="right">
         @if (leadReference(); as ref) {
           <span class="ref">{{ ref }}</span>
@@ -25,30 +22,43 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 14px 16px;
-      background: #5c6b3a;
-      color: #fff;
+      gap: 8px;
+      padding: 9px 16px;
+      background: #ede8de;
+      color: #6b5d44;
+      border-bottom: 1px solid #ddd5c6;
     }
-    h1 { margin: 0; font-size: 1.05rem; font-weight: 600; }
-    p { margin: 2px 0 0; font-size: 0.75rem; opacity: 0.85; }
-    .right { display: flex; align-items: center; gap: 10px; }
+    .ctx {
+      font-size: 0.74rem;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      color: #4a5730;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .right { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
     .ref {
-      font-size: 0.75rem;
-      background: rgba(255, 255, 255, 0.18);
-      padding: 4px 10px;
-      border-radius: 12px;
+      font-size: 0.7rem;
+      background: #e2dccd;
+      color: #5c6b3a;
+      padding: 3px 9px;
+      border-radius: 10px;
       letter-spacing: 0.04em;
     }
     .new {
       font-size: 0.72rem;
-      color: #fff;
+      font-weight: 600;
+      color: #4a5730;
       background: transparent;
-      border: 1px solid rgba(255, 255, 255, 0.5);
-      border-radius: 14px;
-      padding: 5px 10px;
+      border: 1px solid #cfc7b6;
+      border-radius: 12px;
+      padding: 5px 11px;
       cursor: pointer;
+      transition: background 0.15s ease, border-color 0.15s ease;
     }
-    .new:hover { background: rgba(255, 255, 255, 0.12); }
+    .new:hover { background: #e4ddce; border-color: #b9b09c; }
+    .new:focus-visible { outline: 2px solid #5c6b3a; outline-offset: 1px; }
   `,
 })
 export class ConversationHeaderComponent {
