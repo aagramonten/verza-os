@@ -66,19 +66,23 @@
       '.launcher:hover{transform:translateY(-2px);}',
       '.launcher .leaf{font-size:18px;line-height:1;}',
       '.launcher.hidden{opacity:0;pointer-events:none;transform:scale(.8);}',
-      '.panel{position:fixed;right:20px;bottom:20px;width:400px;height:640px;max-width:calc(100vw - 40px);',
-      'max-height:calc(100dvh - 40px);background:#fff;border-radius:16px;overflow:hidden;',
-      'box-shadow:0 18px 50px rgba(0,0,0,.32);display:flex;flex-direction:column;',
+      '.panel{position:fixed;right:20px;bottom:20px;width:384px;height:540px;max-width:calc(100vw - 40px);',
+      'max-height:calc(100dvh - 40px);background:#fff;border-radius:18px;overflow:hidden;',
+      'box-shadow:0 20px 48px rgba(28,44,20,.30),0 2px 6px rgba(28,44,20,.14),0 0 0 1px rgba(40,50,30,.05);',
+      'display:flex;flex-direction:column;',
       // visibility:hidden while closed: iOS Safari does not reliably honor
       // pointer-events:none over iframes, which left the closed panel eating
       // every touch and froze page scroll on phones.
       'opacity:0;transform:translateY(16px) scale(.98);pointer-events:none;visibility:hidden;',
       'transition:opacity .2s ease,transform .2s ease,visibility .2s;}',
       '.panel.open{opacity:1;transform:none;pointer-events:auto;visibility:visible;}',
-      '.bar{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;',
-      'background:' + cfg.color + ';color:#fff;flex:0 0 auto;}',
-      '.bar .title{display:flex;align-items:center;gap:8px;font:600 15px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;}',
-      '.bar .title small{display:block;font-weight:400;font-size:11px;opacity:.85;margin-top:2px;}',
+      '.bar{display:flex;align-items:center;justify-content:space-between;padding:13px 14px;',
+      'background:linear-gradient(135deg,' + cfg.color + ' 0%,#4a5730 100%);color:#fff;flex:0 0 auto;',
+      'box-shadow:0 1px 0 rgba(0,0,0,.06);}',
+      '.bar .title{display:flex;align-items:center;gap:10px;font:600 15px/1.15 -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;}',
+      '.bar .ava{width:30px;height:30px;flex:0 0 auto;border-radius:50%;background:rgba(255,255,255,.18);',
+      'display:inline-flex;align-items:center;justify-content:center;font-size:16px;}',
+      '.bar .title small{display:block;font-weight:400;font-size:11px;opacity:.88;margin-top:2px;letter-spacing:.01em;}',
       '.bar button{background:transparent;border:none;color:#fff;font-size:22px;line-height:1;',
       'cursor:pointer;padding:2px 6px;border-radius:6px;opacity:.9;}',
       '.bar button:hover{opacity:1;background:rgba(255,255,255,.15);}',
@@ -102,8 +106,8 @@
     panel.setAttribute('role', 'dialog');
     panel.setAttribute('aria-label', 'Asistente Vera');
     panel.innerHTML =
-      '<div class="bar"><span class="title"><span aria-hidden="true">🌿</span>' +
-      '<span>Vera<small>Cotiza tu proyecto, gratis</small></span></span>' +
+      '<div class="bar"><span class="title"><span class="ava" aria-hidden="true">🌿</span>' +
+      '<span>Vera<small>Cotiza tu jardín · Puerto Rico</small></span></span>' +
       '<button type="button" aria-label="Cerrar">&times;</button></div>';
     var frameHolder = document.createElement('div');
     frameHolder.style.cssText = 'flex:1 1 auto;display:flex;';
