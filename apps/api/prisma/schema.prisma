@@ -90,6 +90,10 @@ enum CustomerSource {
   CHAT
 }
 
+enum CustomerAuthPurpose {
+  PORTAL_LOGIN
+}
+
 enum MediaKind {
   PHOTO
 }
@@ -304,12 +308,57 @@ model Customer {
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
 
-  leads    Lead[]
-  projects Project[]
+  leads      Lead[]
+  projects   Project[]
+  authTokens CustomerAuthToken[]
+  sessions   CustomerSession[]
 
   @@unique([companyId, phone])
+  @@unique([companyId, id])
+  @@index([companyId, email])
   @@index([companyId, createdAt])
   @@map("customers")
+}
+
+// Single-use passwordless login tokens for the customer portal. Raw tokens
+// are delivered once through a notification port; only SHA-256 hashes persist.
+model CustomerAuthToken {
+  id         String              @id @default(uuid())
+  companyId  String
+  customerId String
+  tokenHash  String              @unique
+  purpose    CustomerAuthPurpose @default(PORTAL_LOGIN)
+  expiresAt  DateTime
+  usedAt     DateTime?
+  ipHash     String?
+  createdAt  DateTime            @default(now())
+
+  customer Customer @relation(fields: [companyId, customerId], references: [companyId, id])
+
+  @@index([companyId, customerId])
+  @@index([companyId, expiresAt])
+  @@map("customer_auth_tokens")
+}
+
+// Revocable opaque sessions for authenticated customers. The browser receives
+// the raw token once; only its SHA-256 hash is stored.
+model CustomerSession {
+  id         String    @id @default(uuid())
+  companyId  String
+  customerId String
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  lastUsedAt DateTime
+  ipHash     String?
+  userAgent  String?
+  createdAt  DateTime  @default(now())
+
+  customer Customer @relation(fields: [companyId, customerId], references: [companyId, id])
+
+  @@index([companyId, customerId])
+  @@index([companyId, expiresAt])
+  @@map("customer_sessions")
 }
 
 model Lead {

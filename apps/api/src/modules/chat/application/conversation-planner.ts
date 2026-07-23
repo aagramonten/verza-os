@@ -80,6 +80,16 @@ function nextPriority(
 ): string | null {
   if (service === null) return 'serviceType';
   const met = topicMap(collected, photoCount);
+  const intakePriorities = [
+    'description',
+    'projectArea',
+    'municipality',
+    'customerName',
+    'phone',
+  ] as const;
+  for (const topic of intakePriorities) {
+    if (met[topic] === false) return topic;
+  }
   const serviceFlow = SERVICE_CONVERSATION_FLOWS[service];
   const priorities = serviceFlow.questionPriority.length > 0 ? serviceFlow.questionPriority : SERVICE_PRIORITIES[service];
   for (const topic of priorities) {
@@ -97,6 +107,8 @@ function topicMap(collected: CollectedProjectState, photoCount: number): Record<
     description: hasValue(collected, 'description'),
     scope: hasValue(collected, 'description'),
     municipality: hasValue(collected, 'municipality'),
+    customerName: hasValue(collected, 'customerName'),
+    phone: hasValue(collected, 'phone'),
     propertyType: hasValue(collected, 'propertyType'),
     projectArea: hasValue(collected, 'projectArea'),
     photos: photoCount > 0,
@@ -182,7 +194,15 @@ function buildOwnerSummary(
 }
 
 function waitUntilVisit(missing: string[], optional: string[]): string[] {
-  const canWait = new Set(['measurements', 'area', 'sunCondition', 'waterSource', 'pressureKnown']);
+  const canWait = new Set([
+    'measurements',
+    'area',
+    'budget',
+    'budgetOrTimeline',
+    'sunCondition',
+    'waterSource',
+    'pressureKnown',
+  ]);
   return [...missing, ...optional].filter((item) => canWait.has(item));
 }
 

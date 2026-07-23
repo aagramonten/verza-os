@@ -18,15 +18,14 @@ export const REQUIRED_FIELDS = [
   'customerName',
   'phone',
   'municipality',
-  'propertyType',
   'serviceType',
   'description',
+  'projectArea',
 ] as const;
 
 /** Strongly-preferred fields (asked for, never forced). */
 export const PREFERRED_FIELDS = [
-  'requiresRemoval',
-  'hasIrrigation',
+  'email',
   'desiredDate',
   'budgetMaxCents',
 ] as const;

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import type { Express } from 'express';
@@ -14,6 +15,7 @@ import {
   type LlmProvider,
 } from '../../src/modules/ai/application/llm-provider.port.js';
 import { testEnv } from '../helpers/test-env.js';
+import { ScryptPasswordHasher } from '../../src/modules/auth/infrastructure/scrypt-password-hasher.js';
 
 class FixedClock implements Clock {
   now(): Date {
@@ -106,6 +108,7 @@ describe('Vera orchestrator API', () => {
   const clock = new FixedClock();
   const sessionIds: string[] = [];
   const leadIds: string[] = [];
+  const userIds: string[] = [];
   const startedAt = new Date();
 
   beforeAll(async () => {
@@ -128,6 +131,8 @@ describe('Vera orchestrator API', () => {
     await prisma.chatSession.deleteMany({ where: { id: { in: sessionIds } } });
     await prisma.lead.deleteMany({ where: { id: { in: leadIds } } });
     await prisma.customer.deleteMany({ where: { createdAt: { gte: startedAt } } });
+    await prisma.refreshToken.deleteMany({ where: { userId: { in: userIds } } });
+    await prisma.user.deleteMany({ where: { id: { in: userIds } } });
     await prisma.auditLog.deleteMany({ where: { createdAt: { gte: startedAt } } });
     await prisma.$disconnect();
   });
@@ -352,6 +357,133 @@ describe('Vera orchestrator API', () => {
     // A closed session no longer accepts messages (customer cannot mutate a confirmed lead).
     const blocked = await send(sessionId, token, 'cambia algo');
     expect(blocked.status).toBe(409);
+  });
+
+  it('captures a complete sales intake across short turns and exposes the saved lead to admin', async () => {
+    const { sessionId, token, leadId } = await newSession();
+    const phone = `+1787${Math.floor(1000000 + Math.random() * 8999999)}`;
+
+    mock.enqueue({
+      content: turn({
+        replyToCustomer: '¿Qué área quieres transformar?',
+        extractedData: extracted({
+          serviceType: 'LANDSCAPE_DESIGN_INSTALLATION',
+          description: 'Renovar el jardín con plantas de bajo mantenimiento',
+        }),
+      }),
+    });
+    await send(sessionId, token, 'Quiero renovar el jardín con plantas fáciles de mantener');
+
+    mock.enqueue({
+      content: turn({
+        replyToCustomer: '¿En qué pueblo queda la propiedad?',
+        extractedData: extracted({ projectArea: 'FRONT_YARD' }),
+      }),
+    });
+    await send(sessionId, token, 'Es el jardín del frente');
+
+    mock.enqueue({
+      content: turn({
+        replyToCustomer: '¿A nombre de quién lo registramos?',
+        extractedData: extracted({ municipality: 'Caguas' }),
+      }),
+    });
+    await send(sessionId, token, 'La propiedad queda en Caguas');
+
+    mock.enqueue({
+      content: turn({
+        replyToCustomer: '¿Cuál es tu WhatsApp o teléfono?',
+        extractedData: extracted({ customerName: 'Laura Rivera' }),
+      }),
+    });
+    await send(sessionId, token, 'Soy Laura Rivera');
+
+    mock.enqueue({
+      content: turn({
+        replyToCustomer: '¿Tienes medidas aproximadas?',
+        extractedData: extracted({ phone, email: 'laura@example.com' }),
+      }),
+    });
+    await send(sessionId, token, `Mi número es ${phone} y mi email es laura@example.com`);
+
+    mock.enqueue({
+      content: turn({
+        replyToCustomer: '¿Tienes un presupuesto estimado?',
+        extractedData: extracted({ lengthFt: 20, widthFt: 15 }),
+      }),
+    });
+    await send(sessionId, token, 'Mide aproximadamente 20 por 15 pies');
+
+    mock.enqueue({
+      content: turn({
+        replyToCustomer: 'Recibí la información. El equipo revisará el proyecto contigo.',
+        extractedData: extracted({ budgetMaxCents: 500000, desiredDate: '2026-07-25' }),
+        readyForConfirmation: true,
+      }),
+    });
+    const finalTurn = await send(
+      sessionId,
+      token,
+      'Mi presupuesto es hasta $5,000 y quisiera hacerlo pronto, para el 25 de julio',
+    );
+    expect(finalTurn.status).toBe(201);
+    expect(finalTurn.body.messages[1].content).toContain('Recibí la información');
+
+    const saved = await prisma.lead.findUniqueOrThrow({ where: { id: leadId } });
+    expect(saved.followUpStatus).toBe('NEW');
+    expect(saved.budgetMaxCents).toBe(500000);
+    expect(saved.description).toBe('Renovar el jardín con plantas de bajo mantenimiento');
+    expect(await collected(leadId)).toEqual(
+      expect.objectContaining({
+        customerName: 'Laura Rivera',
+        phone,
+        email: 'laura@example.com',
+        municipality: 'Caguas',
+        serviceType: 'LANDSCAPE_DESIGN_INSTALLATION',
+        projectArea: 'FRONT_YARD',
+        computedSquareFeet: 300,
+        budgetMaxCents: 500000,
+        desiredDate: '2026-07-25',
+      }),
+    );
+
+    const password = 'Admin-Phase1-1!';
+    const user = await prisma.user.create({
+      data: {
+        companyId: env.DEFAULT_COMPANY_ID,
+        email: `phase1-admin+${randomUUID()}@test.local`,
+        name: 'Phase 1 Admin',
+        role: 'ADMIN',
+        passwordHash: await new ScryptPasswordHasher().hash(password),
+      },
+    });
+    userIds.push(user.id);
+    const login = await request(app).post('/api/v1/auth/login').send({
+      email: user.email,
+      password,
+    });
+    expect(login.status).toBe(200);
+
+    const adminLead = await request(app)
+      .get(`/api/v1/leads/${leadId}`)
+      .set('Authorization', `Bearer ${login.body.accessToken as string}`);
+    expect(adminLead.status).toBe(200);
+    expect(adminLead.body.followUpStatus).toBe('NEW');
+    expect(adminLead.body.customer).toEqual(
+      expect.objectContaining({
+        name: 'Laura Rivera',
+        phone,
+        email: 'laura@example.com',
+        municipality: 'Caguas',
+      }),
+    );
+    expect(adminLead.body.collectedData.fields).toEqual(
+      expect.objectContaining({
+        projectArea: 'FRONT_YARD',
+        computedSquareFeet: 300,
+        budgetMaxCents: 500000,
+      }),
+    );
   });
 
   it('responds in English when the model returns English', async () => {

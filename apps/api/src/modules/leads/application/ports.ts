@@ -40,6 +40,10 @@ export interface LeadDetailDto extends LeadListItemDto {
   desiredDate: string | null;
   preferredVisitTime: string | null;
   adminSummary: unknown;
+  collectedData: {
+    fields: Record<string, unknown>;
+    confirmed: string[];
+  } | null;
   leadScore: number | null;
   conversionBand: string | null;
   suggestedNextAction: string | null;

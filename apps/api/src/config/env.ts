@@ -40,6 +40,10 @@ const envSchema = z
     AUTH_ACCESS_TTL_MIN: z.coerce.number().int().positive().max(1440).default(15),
     AUTH_REFRESH_TTL_DAYS: z.coerce.number().int().positive().max(365).default(30),
     AUTH_LOGIN_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(10),
+    CUSTOMER_MAGIC_LINK_TTL_MIN: z.coerce.number().int().positive().max(60).default(15),
+    CUSTOMER_SESSION_TTL_DAYS: z.coerce.number().int().positive().max(90).default(30),
+    CUSTOMER_AUTH_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(5),
+    TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(3).default(1),
   })
   .superRefine((env, ctx) => {
     if (env.AI_ENABLED) {

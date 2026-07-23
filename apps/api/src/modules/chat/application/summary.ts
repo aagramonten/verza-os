@@ -39,6 +39,7 @@ export function buildSummary(
 
   push('Nombre', 'customerName');
   push('Teléfono', 'phone');
+  push('Email', 'email');
   push('Pueblo', 'municipality');
   push('Servicio', 'serviceType', (v) =>
     typeof v === 'string' && isAiServiceType(v) ? serviceLabelEs(v) : String(v),
@@ -60,6 +61,9 @@ export function buildSummary(
   }
   // Visit preference (owner schedules the actual appointment against these).
   push('Fecha preferida', 'desiredDate');
+  if (!hasValue(collected, 'desiredDate')) {
+    lines.push({ label: 'Urgencia', value: 'sin indicar' });
+  }
   push('Horario preferido', 'preferredVisitTime', visitTimeEs);
 
   lines.push({ label: 'Fotos recibidas', value: String(photoCount) });

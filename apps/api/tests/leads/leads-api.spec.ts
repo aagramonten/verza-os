@@ -71,6 +71,15 @@ describe('Leads API', () => {
         serviceType: 'LAWN',
         status: 'READY_FOR_REVIEW',
         description: 'Grama nueva en el patio',
+        collectedData: {
+          fields: {
+            customerName: 'María Rivera',
+            phone: customer.phone,
+            municipality: 'Caguas',
+            projectArea: 'BACK_YARD',
+          },
+          confirmed: ['customerName', 'phone'],
+        },
         confirmedAt: new Date(),
       },
     });
@@ -131,6 +140,14 @@ describe('Leads API', () => {
     expect(res.body.referenceNumber).toMatch(/^VG-T/);
     expect(res.body.photoCount).toBe(0);
     expect(res.body.description).toBe('Grama nueva en el patio');
+    expect(res.body.collectedData).toEqual({
+      fields: expect.objectContaining({
+        customerName: 'María Rivera',
+        municipality: 'Caguas',
+        projectArea: 'BACK_YARD',
+      }),
+      confirmed: ['customerName', 'phone'],
+    });
   });
 
   it('updates the follow-up status and persists it', async () => {

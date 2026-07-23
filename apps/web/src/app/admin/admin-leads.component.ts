@@ -129,6 +129,22 @@ const FILTERS: Array<{ value: FollowUpStatus | null; label: string }> = [
                     @if (d.description) {
                       <p class="notes"><strong>Proyecto:</strong> {{ d.description }}</p>
                     }
+                    <section class="vera-data" aria-labelledby="vera-data-title">
+                      <h2 id="vera-data-title">Datos recopilados por Vera</h2>
+                      <dl>
+                        <div><dt>Nombre</dt><dd>{{ collected(d, 'customerName') || d.customer?.name || '—' }}</dd></div>
+                        <div><dt>WhatsApp o teléfono</dt><dd>{{ collected(d, 'phone') || d.customer?.phone || '—' }}</dd></div>
+                        <div><dt>Email</dt><dd>{{ collected(d, 'email') || d.customer?.email || '—' }}</dd></div>
+                        <div><dt>Pueblo o zona</dt><dd>{{ collected(d, 'municipality') || d.customer?.municipality || '—' }}</dd></div>
+                        <div><dt>Tipo de proyecto</dt><dd>{{ serviceLabel(collected(d, 'serviceType') || d.serviceType) }}</dd></div>
+                        <div><dt>Área a transformar</dt><dd>{{ projectArea(d) }}</dd></div>
+                        <div><dt>Fotos</dt><dd>{{ d.photoCount > 0 ? d.photoCount : 'No recibidas' }}</dd></div>
+                        <div><dt>Medidas aproximadas</dt><dd>{{ measurements(d) }}</dd></div>
+                        <div><dt>Presupuesto estimado</dt><dd>{{ collectedBudget(d) }}</dd></div>
+                        <div><dt>Urgencia</dt><dd>{{ collected(d, 'desiredDate') || 'Sin indicar' }}</dd></div>
+                      </dl>
+                      <p class="notes"><strong>Notas / resumen:</strong> {{ collected(d, 'description') || d.description || '—' }}</p>
+                    </section>
                     @if (d.adminSummary?.lines; as lines) {
                       <ul class="summary">
                         @for (line of lines; track line.label) {
@@ -321,6 +337,15 @@ const FILTERS: Array<{ value: FollowUpStatus | null; label: string }> = [
       font-size: 0.86rem;
     }
     .summary span { color: #617164; font-weight: 700; }
+    .vera-data {
+      margin: 14px 0;
+      padding: 14px;
+      border: 1px solid #d8d1c2;
+      border-radius: 8px;
+      background: #f7f4ec;
+    }
+    .vera-data h2 { margin: 0; font-size: 1rem; }
+    .vera-data dl { margin-bottom: 10px; }
     .status-edit {
       display: inline-flex;
       align-items: center;
@@ -545,6 +570,47 @@ export class AdminLeadsComponent implements OnInit {
       return `Desde ${fmt(lead.budgetMinCents)}`;
     }
     return '—';
+  }
+
+  protected collected(lead: LeadDetail, field: string): string {
+    const value = lead.collectedData?.fields[field];
+    if (value === null || value === undefined) return '';
+    if (Array.isArray(value)) return value.join(', ');
+    return typeof value === 'object' ? '' : String(value);
+  }
+
+  protected projectArea(lead: LeadDetail): string {
+    const labels: Record<string, string> = {
+      FRONT_YARD: 'Jardín frontal',
+      BACK_YARD: 'Patio',
+      SIDE_YARD: 'Jardín lateral',
+      ENTRANCE: 'Entrada',
+      MULTIPLE: 'Varias áreas',
+      OTHER: 'Otra área',
+    };
+    const value = this.collected(lead, 'projectArea');
+    return labels[value] ?? (value || '—');
+  }
+
+  protected measurements(lead: LeadDetail): string {
+    const length = this.collected(lead, 'lengthFt');
+    const width = this.collected(lead, 'widthFt');
+    const area =
+      this.collected(lead, 'computedSquareFeet') || this.collected(lead, 'reportedSquareFeet');
+    if (length && width) return `${length} ft × ${width} ft${area ? ` (~${area} ft²)` : ''}`;
+    return area ? `~${area} ft²` : 'Sin indicar';
+  }
+
+  protected collectedBudget(lead: LeadDetail): string {
+    const fields = lead.collectedData?.fields;
+    const min = fields?.['budgetMinCents'];
+    const max = fields?.['budgetMaxCents'];
+    if (typeof min !== 'number' && typeof max !== 'number') return this.budget(lead);
+    return this.budget({
+      ...lead,
+      budgetMinCents: typeof min === 'number' ? min : null,
+      budgetMaxCents: typeof max === 'number' ? max : null,
+    });
   }
 
   private async load(): Promise<void> {

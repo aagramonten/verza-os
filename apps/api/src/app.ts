@@ -10,6 +10,10 @@ import { createAuthModule, type AuthModuleOverrides } from './modules/auth/index
 import { createFinancialsModule } from './modules/financials/index.js';
 import { createLeadsModule } from './modules/leads/index.js';
 import { createSchedulingModule } from './modules/scheduling/index.js';
+import {
+  createCustomerAuthModule,
+  type CustomerAuthModuleOverrides,
+} from './modules/customer-auth/index.js';
 
 export interface AppDependencies {
   env: Env;
@@ -17,6 +21,7 @@ export interface AppDependencies {
   logger?: Logger;
   chatOverrides?: ChatModuleOverrides;
   authOverrides?: AuthModuleOverrides;
+  customerAuthOverrides?: CustomerAuthModuleOverrides;
 }
 
 export const API_VERSION = '0.1.0';
@@ -38,6 +43,7 @@ export function buildApp({
   logger,
   chatOverrides,
   authOverrides,
+  customerAuthOverrides,
 }: AppDependencies): Express {
   const log =
     logger ??
@@ -53,6 +59,7 @@ export function buildApp({
   const app = express();
 
   app.disable('x-powered-by');
+  app.set('trust proxy', env.TRUST_PROXY_HOPS);
   app.use(helmet());
   app.use(express.json({ limit: '100kb' }));
   app.use(
@@ -85,6 +92,9 @@ export function buildApp({
 
   const auth = createAuthModule(env, prisma, authOverrides ?? {});
   app.use('/api/v1/auth', auth.router);
+
+  const customerAuth = createCustomerAuthModule(env, prisma, customerAuthOverrides ?? {});
+  app.use('/api/v1/mi-jardin/auth', customerAuth.router);
 
   const financials = createFinancialsModule(env, prisma, { authenticate: auth.authenticate });
   app.use('/api/v1', financials.router);

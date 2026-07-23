@@ -103,6 +103,10 @@ export interface LeadDetail extends LeadListItem {
   desiredDate: string | null;
   preferredVisitTime: string | null;
   adminSummary: { lines?: Array<{ label: string; value: string }> } | null;
+  collectedData: {
+    fields: Record<string, unknown>;
+    confirmed: string[];
+  } | null;
   leadScore: number | null;
   conversionBand: string | null;
   suggestedNextAction: string | null;

@@ -74,12 +74,28 @@ export class PrismaLeadRepository implements LeadRepository {
       desiredDate: row.desiredDate?.toISOString() ?? null,
       preferredVisitTime: row.preferredVisitTime,
       adminSummary: row.adminSummary,
+      collectedData: toCollectedData(row.collectedData),
       leadScore: row.leadScore,
       conversionBand: row.conversionBand,
       suggestedNextAction: row.suggestedNextAction,
       photoCount,
     };
   }
+}
+
+function toCollectedData(value: Prisma.JsonValue | null): LeadDetailDto['collectedData'] {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
+  const data = value as Record<string, Prisma.JsonValue>;
+  const fields = data['fields'];
+  return {
+    fields:
+      fields !== null && typeof fields === 'object' && !Array.isArray(fields)
+        ? (fields as Record<string, unknown>)
+        : {},
+    confirmed: Array.isArray(data['confirmed'])
+      ? data['confirmed'].filter((item): item is string => typeof item === 'string')
+      : [],
+  };
 }
 
 function toListItem(row: LeadRow): LeadListItemDto {
