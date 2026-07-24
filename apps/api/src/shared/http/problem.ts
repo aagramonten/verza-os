@@ -49,10 +49,34 @@ export function errorHandler(
     return;
   }
 
+  // express.json reports malformed/invalid JSON values as a SyntaxError with
+  // status 400. Shape it safely instead of leaking the parser error or
+  // misclassifying a client boundary failure as an internal error.
+  if (isJsonBodyError(err)) {
+    const problem: Problem = {
+      type: 'about:blank',
+      title: 'Bad Request',
+      status: 400,
+      detail: 'Invalid JSON request body',
+    };
+    res.status(400).contentType('application/problem+json').json(problem);
+    return;
+  }
+
   const problem: Problem = {
     type: 'about:blank',
     title: 'Internal Server Error',
     status: 500,
   };
   res.status(500).contentType('application/problem+json').json(problem);
+}
+
+function isJsonBodyError(error: unknown): boolean {
+  return (
+    error instanceof SyntaxError &&
+    typeof error === 'object' &&
+    error !== null &&
+    'status' in error &&
+    error.status === 400
+  );
 }

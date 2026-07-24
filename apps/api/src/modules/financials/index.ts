@@ -8,11 +8,13 @@ import { CostService } from './application/cost.service.js';
 import { MarketingService } from './application/marketing.service.js';
 import { PaymentService } from './application/payment.service.js';
 import { DashboardService } from './application/dashboard.service.js';
+import { QuoteService } from './application/quote.service.js';
 import { PrismaProjectRepository } from './infrastructure/prisma-project.repository.js';
 import { PrismaCostRepository } from './infrastructure/prisma-cost.repository.js';
 import { PrismaMarketingSpendRepository } from './infrastructure/prisma-marketing.repository.js';
 import { PrismaPaymentRepository } from './infrastructure/prisma-payment.repository.js';
 import { PrismaDashboardRepository } from './infrastructure/prisma-dashboard.repository.js';
+import { PrismaOfficialQuoteRepository } from './infrastructure/prisma-official-quote.repository.js';
 import { SystemClock } from './infrastructure/system-clock.js';
 import { createFinancialsRouter } from './presentation/financials.router.js';
 
@@ -33,6 +35,7 @@ export function createFinancialsModule(
 ): { router: Router } {
   const audit = new AuditLogService(prisma, env.DEFAULT_COMPANY_ID);
   const projectRepo = new PrismaProjectRepository(prisma);
+  const clock = new SystemClock();
 
   const projects = new ProjectService({ projects: projectRepo, audit });
   const costs = new CostService({
@@ -52,7 +55,11 @@ export function createFinancialsModule(
   });
   const dashboard = new DashboardService({
     dashboard: new PrismaDashboardRepository(prisma),
-    clock: new SystemClock(),
+    clock,
+  });
+  const quotes = new QuoteService({
+    quotes: new PrismaOfficialQuoteRepository(prisma),
+    clock,
   });
 
   const router = createFinancialsRouter({
@@ -61,6 +68,7 @@ export function createFinancialsModule(
     payments,
     marketing,
     dashboard,
+    quotes,
     authenticate: deps.authenticate,
     requireOwnerOrAdmin: requireRole('OWNER', 'ADMIN'),
   });

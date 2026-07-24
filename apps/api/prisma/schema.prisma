@@ -165,6 +165,7 @@ enum ProjectStatus {
 // actor (BUSINESS_RULES §Quote). Superseded rows are retained, never deleted.
 enum QuoteStatus {
   DRAFT
+  PENDING_APPROVAL
   APPROVED
   SENT
   ACCEPTED
@@ -249,6 +250,7 @@ model User {
   approvedQuotes OfficialQuote[] @relation("QuoteApprover")
   refreshTokens  RefreshToken[]
 
+  @@unique([companyId, id])
   @@index([companyId, email])
   @@map("users")
 }
@@ -640,11 +642,12 @@ model Project {
 
   lead            Lead?            @relation(fields: [leadId], references: [id])
   customer        Customer?        @relation(fields: [customerId], references: [id])
-  quotes          OfficialQuote[]
+  quotes          OfficialQuote[]  @relation("QuoteProject")
   costs           ProjectCost[]
   payments        Payment[]
   marketingSpends MarketingSpend[]
 
+  @@unique([companyId, id])
   @@index([companyId, status])
   @@index([companyId, createdAt])
   @@index([companyId, serviceType])
@@ -664,6 +667,7 @@ model OfficialQuote {
   currency         String      @default("USD")
   lineItems        Json?
   subtotalCents    Int
+  taxRateBps       Int?
   taxCents         Int         @default(0)
   totalCents       Int
   validUntil       DateTime?
@@ -675,8 +679,8 @@ model OfficialQuote {
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
 
-  project    Project @relation(fields: [projectId], references: [id])
-  approvedBy User?   @relation("QuoteApprover", fields: [approvedByUserId], references: [id])
+  project    Project @relation("QuoteProject", fields: [companyId, projectId], references: [companyId, id], onDelete: Restrict, onUpdate: Restrict)
+  approvedBy User?   @relation("QuoteApprover", fields: [companyId, approvedByUserId], references: [companyId, id], onDelete: Restrict, onUpdate: Restrict)
 
   @@unique([projectId, version])
   @@index([companyId, projectId])

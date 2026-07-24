@@ -20,6 +20,7 @@ import { AdminApiService, type Dashboard } from './admin-api.service';
         <nav class="actions">
           <a routerLink="/admin/leads" class="ghost">Leads</a>
           <a routerLink="/admin/agenda" class="ghost">Agenda</a>
+          <a routerLink="/admin/cotizaciones" class="ghost">Cotizaciones</a>
           <button type="button" class="ghost" (click)="logout()">Sign out</button>
         </nav>
       </header>

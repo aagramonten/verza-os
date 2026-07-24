@@ -7,6 +7,7 @@ import {
   ProjectStatus,
   ServiceType,
 } from '@prisma/client';
+import { MAX_QUANTITY_MILLI, MAX_QUOTE_LINE_ITEMS, MYSQL_SIGNED_INT_MAX } from '../domain/quote.js';
 
 export const idSchema = z.string().uuid();
 
@@ -38,6 +39,30 @@ export const projectCreateSchema = z.object({
 });
 
 export const projectUpdateSchema = nonEmptyBody(projectCreateSchema);
+
+// ── Official quotes ─────────────────────────────────────────────────
+
+const quoteLineItemSchema = z
+  .object({
+    description: z.string().trim().min(1).max(500),
+    quantityMilli: z.number().int().min(1).max(MAX_QUANTITY_MILLI),
+    unitPriceCents: z.number().int().min(0).max(MYSQL_SIGNED_INT_MAX),
+  })
+  .strict();
+
+export const officialQuoteCreateSchema = z
+  .object({
+    lineItems: z.array(quoteLineItemSchema).min(1).max(MAX_QUOTE_LINE_ITEMS),
+    taxRateBps: z.number().int().min(0).max(10_000),
+    validUntil: z
+      .string()
+      .datetime({ offset: true })
+      .transform((value) => new Date(value)),
+    notes: z.string().max(5000).nullable().optional(),
+  })
+  .strict();
+
+export const emptyActionSchema = z.object({}).strict();
 
 // ── Costs ────────────────────────────────────────────────────────────
 

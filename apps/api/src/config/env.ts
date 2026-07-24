@@ -43,6 +43,10 @@ const envSchema = z
     CUSTOMER_MAGIC_LINK_TTL_MIN: z.coerce.number().int().positive().max(60).default(15),
     CUSTOMER_SESSION_TTL_DAYS: z.coerce.number().int().positive().max(90).default(30),
     CUSTOMER_AUTH_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(5),
+    CUSTOMER_MAGIC_LINK_PROVIDER: z.enum(['noop', 'resend']).default('noop'),
+    CUSTOMER_PORTAL_URL: z.string().url().default('http://localhost:4200'),
+    CUSTOMER_EMAIL_FROM: z.string().default(''),
+    RESEND_API_KEY: z.string().default(''),
     TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(3).default(1),
   })
   .superRefine((env, ctx) => {
@@ -66,6 +70,42 @@ const envSchema = z
           code: z.ZodIssueCode.custom,
           path: ['AI_MODEL'],
           message: 'Required when AI_ENABLED=true',
+        });
+      }
+    }
+    if (env.CUSTOMER_MAGIC_LINK_PROVIDER === 'resend') {
+      if (env.RESEND_API_KEY === '') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['RESEND_API_KEY'],
+          message: 'Required when CUSTOMER_MAGIC_LINK_PROVIDER=resend',
+        });
+      }
+      if (env.CUSTOMER_EMAIL_FROM === '') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['CUSTOMER_EMAIL_FROM'],
+          message: 'Required when CUSTOMER_MAGIC_LINK_PROVIDER=resend',
+        });
+      }
+      let portalUrl: URL | null = null;
+      try {
+        portalUrl = new URL(env.CUSTOMER_PORTAL_URL);
+      } catch {
+        // The base URL schema reports the validation issue.
+      }
+      if (portalUrl && (portalUrl.username !== '' || portalUrl.password !== '')) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['CUSTOMER_PORTAL_URL'],
+          message: 'Must not contain credentials',
+        });
+      }
+      if (portalUrl && env.NODE_ENV === 'production' && portalUrl.protocol !== 'https:') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['CUSTOMER_PORTAL_URL'],
+          message: 'Must use HTTPS in production',
         });
       }
     }

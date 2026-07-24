@@ -4,9 +4,20 @@ import type {
   PaymentType,
   PaymentMethod,
   ProjectStatus,
+  QuoteStatus,
   ServiceType,
+  UserRole,
 } from '@prisma/client';
-import type { CostDto, MarketingSpendDto, PaymentDto, Page, ProjectDto } from './dto.js';
+import type {
+  CostDto,
+  MarketingSpendDto,
+  OfficialQuoteDto,
+  OfficialQuoteLineItemDto,
+  PaymentDto,
+  Page,
+  ProjectDto,
+} from './dto.js';
+import type { QuoteWorkflowAction } from '../domain/quote.js';
 
 export interface Clock {
   now(): Date;
@@ -16,6 +27,8 @@ export interface Clock {
 export interface Actor {
   companyId: string;
   userId: string;
+  role: UserRole;
+  kind: 'HUMAN';
 }
 
 /** Append-only audit port; satisfied by the shared AuditLogService. */
@@ -65,6 +78,89 @@ export interface ProjectRepository {
   findById(companyId: string, id: string): Promise<ProjectDto | null>;
   list(companyId: string, options: ListOptions): Promise<Page<ProjectDto>>;
   update(companyId: string, id: string, input: UpdateProjectInput): Promise<ProjectDto | null>;
+}
+
+// ── Official quotes ─────────────────────────────────────────────────
+
+export interface CreateOfficialQuoteInput {
+  lineItems: Array<{
+    description: string;
+    quantityMilli: number;
+    unitPriceCents: number;
+  }>;
+  taxRateBps: number;
+  validUntil: Date;
+  notes?: string | null | undefined;
+}
+
+/** Fully server-priced immutable commercial snapshot. */
+export interface OfficialQuoteSnapshot {
+  lineItems: OfficialQuoteLineItemDto[];
+  subtotalCents: number;
+  taxRateBps: number;
+  taxCents: number;
+  totalCents: number;
+  validUntil: Date;
+  notes: string | null;
+}
+
+export type CreateOfficialQuoteResult =
+  | { kind: 'created'; quote: OfficialQuoteDto }
+  | { kind: 'project-not-found' }
+  | { kind: 'actor-not-allowed' }
+  | { kind: 'already-exists' };
+
+export type OfficialQuoteTransitionResult =
+  | { kind: 'updated'; quote: OfficialQuoteDto }
+  | { kind: 'unchanged'; quote: OfficialQuoteDto }
+  | { kind: 'not-found' }
+  | { kind: 'actor-not-allowed' }
+  | { kind: 'expired' }
+  | { kind: 'invalid-snapshot' }
+  | { kind: 'conflict'; currentStatus: QuoteStatus };
+
+export type RequoteResult =
+  | { kind: 'created'; quote: OfficialQuoteDto }
+  | { kind: 'not-found' }
+  | { kind: 'actor-not-allowed' }
+  | { kind: 'conflict'; currentStatus: QuoteStatus };
+
+export interface OfficialQuoteTransitionCommand {
+  companyId: string;
+  projectId: string;
+  quoteId: string;
+  actorId: string;
+  actorRole: UserRole;
+  action: Exclude<QuoteWorkflowAction, 'REQUOTE'>;
+  fromStatus: QuoteStatus;
+  toStatus: QuoteStatus;
+  at: Date;
+}
+
+export interface OfficialQuoteRepository {
+  createInitialDraft(input: {
+    companyId: string;
+    projectId: string;
+    actorId: string;
+    actorRole: UserRole;
+    snapshot: OfficialQuoteSnapshot;
+  }): Promise<CreateOfficialQuoteResult>;
+  findById(companyId: string, projectId: string, quoteId: string): Promise<OfficialQuoteDto | null>;
+  list(
+    companyId: string,
+    projectId: string,
+    options: ListOptions,
+  ): Promise<Page<OfficialQuoteDto> | null>;
+  transition(input: OfficialQuoteTransitionCommand): Promise<OfficialQuoteTransitionResult>;
+  requote(input: {
+    companyId: string;
+    projectId: string;
+    quoteId: string;
+    actorId: string;
+    actorRole: UserRole;
+    at: Date;
+    snapshot: OfficialQuoteSnapshot;
+  }): Promise<RequoteResult>;
 }
 
 // ── Costs ────────────────────────────────────────────────────────────

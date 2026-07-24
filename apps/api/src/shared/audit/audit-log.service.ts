@@ -1,5 +1,7 @@
 import type { ActorType, Prisma, PrismaClient } from '@prisma/client';
 
+type AuditLogClient = Pick<PrismaClient, 'auditLog'>;
+
 export interface AuditEntry {
   actorType: ActorType;
   actorId?: string;
@@ -16,7 +18,7 @@ export interface AuditEntry {
  */
 export class AuditLogService {
   constructor(
-    private readonly prisma: PrismaClient,
+    private readonly prisma: AuditLogClient,
     private readonly companyId: string,
   ) {}
 

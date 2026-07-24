@@ -40,4 +40,50 @@ describe('environment validation', () => {
   it('requires AI provider settings when AI_ENABLED=true', () => {
     expect(() => loadEnv(validEnvSource({ AI_ENABLED: 'true' }))).toThrow(/AI_PROVIDER_BASE_URL/);
   });
+
+  it('requires Resend settings when customer email delivery is enabled', () => {
+    expect(() => loadEnv(validEnvSource({ CUSTOMER_MAGIC_LINK_PROVIDER: 'resend' }))).toThrow(
+      /RESEND_API_KEY/,
+    );
+    expect(() =>
+      loadEnv(
+        validEnvSource({
+          CUSTOMER_MAGIC_LINK_PROVIDER: 'resend',
+          RESEND_API_KEY: 're_test',
+        }),
+      ),
+    ).toThrow(/CUSTOMER_EMAIL_FROM/);
+  });
+
+  it('accepts complete Resend customer email settings', () => {
+    const env = loadEnv(
+      validEnvSource({
+        CUSTOMER_MAGIC_LINK_PROVIDER: 'resend',
+        CUSTOMER_PORTAL_URL: 'https://cotizar.verzagarden.com',
+        CUSTOMER_EMAIL_FROM: 'Verza Garden <hola@verzagarden.com>',
+        RESEND_API_KEY: 're_test',
+      }),
+    );
+    expect(env.CUSTOMER_MAGIC_LINK_PROVIDER).toBe('resend');
+  });
+
+  it('requires a safe HTTPS customer portal URL for Resend in production', () => {
+    const resend = {
+      NODE_ENV: 'production',
+      CUSTOMER_MAGIC_LINK_PROVIDER: 'resend',
+      CUSTOMER_EMAIL_FROM: 'Verza Garden <hola@verzagarden.com>',
+      RESEND_API_KEY: 're_test',
+    };
+    expect(() =>
+      loadEnv(validEnvSource({ ...resend, CUSTOMER_PORTAL_URL: 'http://verzagarden.com' })),
+    ).toThrow(/HTTPS/);
+    expect(() =>
+      loadEnv(
+        validEnvSource({
+          ...resend,
+          CUSTOMER_PORTAL_URL: 'https://user:secret@verzagarden.com',
+        }),
+      ),
+    ).toThrow(/credentials/);
+  });
 });

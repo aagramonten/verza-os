@@ -9,6 +9,7 @@ import { PrismaCustomerLoginTokenRepository } from './infrastructure/prisma-cust
 import { PrismaCustomerSessionRepository } from './infrastructure/prisma-customer-session.repository.js';
 import { Sha256CustomerTokenCodec } from './infrastructure/sha256-customer-token-codec.js';
 import { NoopMagicLinkSender } from './infrastructure/noop-magic-link.sender.js';
+import { ResendMagicLinkSender } from './infrastructure/resend-magic-link.sender.js';
 import { SystemClock } from './infrastructure/system-clock.js';
 import { InMemoryRateLimiter } from './infrastructure/in-memory-rate-limiter.js';
 import { HmacCustomerPiiHasher } from './infrastructure/hmac-customer-pii-hasher.js';
@@ -41,7 +42,7 @@ export function createCustomerAuthModule(
     sessions: new PrismaCustomerSessionRepository(prisma),
     codec: new Sha256CustomerTokenCodec(),
     piiHasher,
-    sender: overrides.sender ?? new NoopMagicLinkSender(),
+    sender: overrides.sender ?? createMagicLinkSender(env),
     audit: new AuditLogService(prisma, env.DEFAULT_COMPANY_ID),
     clock,
     magicLinkTtlMin: env.CUSTOMER_MAGIC_LINK_TTL_MIN,
@@ -56,4 +57,15 @@ export function createCustomerAuthModule(
     verifyLimiter: new InMemoryRateLimiter(env.CUSTOMER_AUTH_RATE_LIMIT_PER_MIN, clock),
   });
   return { router, authenticateCustomer };
+}
+
+function createMagicLinkSender(env: Env): MagicLinkSender {
+  if (env.CUSTOMER_MAGIC_LINK_PROVIDER === 'resend') {
+    return new ResendMagicLinkSender({
+      apiKey: env.RESEND_API_KEY,
+      from: env.CUSTOMER_EMAIL_FROM,
+      portalUrl: env.CUSTOMER_PORTAL_URL,
+    });
+  }
+  return new NoopMagicLinkSender();
 }

@@ -17,3 +17,17 @@ export class InvalidInputError extends Error {
     this.name = 'InvalidInputError';
   }
 }
+
+export class QuoteConflictError extends Error {
+  constructor(detail: string) {
+    super(detail);
+    this.name = 'QuoteConflictError';
+  }
+}
+
+export class QuotePermissionError extends Error {
+  constructor(detail = 'A human OWNER or ADMIN is required for this quote action') {
+    super(detail);
+    this.name = 'QuotePermissionError';
+  }
+}

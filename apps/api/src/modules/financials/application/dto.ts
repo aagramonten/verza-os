@@ -4,6 +4,7 @@ import type {
   PaymentMethod,
   PaymentType,
   ProjectStatus,
+  QuoteStatus,
   ServiceType,
 } from '@prisma/client';
 
@@ -73,6 +74,40 @@ export interface PaymentDto {
   type: PaymentType;
   reference: string | null;
   receivedAt: Date;
+  notes: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface OfficialQuoteLineItemDto {
+  description: string;
+  /** Exact quantity in thousandths: 1 unit = 1000. */
+  quantityMilli: number;
+  unitPriceCents: number;
+  lineTotalCents: number;
+}
+
+/**
+ * Safe admin-facing quote snapshot. Tenant ownership and internal approver
+ * identifiers remain server-side; the approval timestamp is sufficient for
+ * this phase's client contract.
+ */
+export interface OfficialQuoteDto {
+  id: string;
+  projectId: string;
+  version: number;
+  status: QuoteStatus;
+  currency: string;
+  lineItems: OfficialQuoteLineItemDto[];
+  subtotalCents: number;
+  /** Null only for legacy rows whose original rate cannot be reconstructed. */
+  taxRateBps: number | null;
+  taxCents: number;
+  totalCents: number;
+  validUntil: Date | null;
+  approvedAt: Date | null;
+  sentAt: Date | null;
+  acceptedAt: Date | null;
   notes: string | null;
   createdAt: Date;
   updatedAt: Date;

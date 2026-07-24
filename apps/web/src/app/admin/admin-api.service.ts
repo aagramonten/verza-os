@@ -120,6 +120,50 @@ export interface LeadPage {
   offset: number;
 }
 
+export interface ProjectSummary {
+  id: string;
+  referenceNumber: string;
+  title: string | null;
+  status: string;
+  currency: string;
+  contractAmountCents: number | null;
+  customerId: string | null;
+}
+
+export interface QuoteLineItem {
+  description: string;
+  quantityMilli: number;
+  unitPriceCents: number;
+  lineTotalCents: number;
+}
+
+export interface OfficialQuote {
+  id: string;
+  projectId: string;
+  version: number;
+  status: string;
+  currency: string;
+  lineItems: QuoteLineItem[];
+  subtotalCents: number;
+  taxRateBps: number | null;
+  taxCents: number;
+  totalCents: number;
+  validUntil: string | null;
+  approvedAt: string | null;
+  sentAt: string | null;
+  acceptedAt: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface QuotePage {
+  items: OfficialQuote[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 // ── Scheduling / agenda ────────────────────────────────────────────
 
 export type AppointmentStatus = 'PROPOSED' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
@@ -187,6 +231,7 @@ const USER_KEY = 'verza.admin.user';
 export class AdminApiService {
   private readonly http = inject(HttpClient);
   private readonly router = inject(Router);
+  private refreshInFlight: Promise<void> | null = null;
 
   get user(): AdminUser | null {
     const raw = localStorage.getItem(USER_KEY);
@@ -238,6 +283,36 @@ export class AdminApiService {
   async leadDetail(id: string): Promise<LeadDetail> {
     return this.withAuth((headers) =>
       firstValueFrom(this.http.get<LeadDetail>(`/api/v1/leads/${id}`, { headers })),
+    );
+  }
+
+  async projects(): Promise<{ items: ProjectSummary[]; total: number }> {
+    return this.withAuth((headers) =>
+      firstValueFrom(this.http.get<{ items: ProjectSummary[]; total: number }>('/api/v1/projects', { headers })),
+    );
+  }
+
+  async quotes(projectId: string): Promise<QuotePage> {
+    return this.withAuth((headers) =>
+      firstValueFrom(this.http.get<QuotePage>(`/api/v1/projects/${projectId}/quotes`, { headers })),
+    );
+  }
+
+  async createQuote(projectId: string, input: {
+    currency: string;
+    lineItems: Array<{ description: string; quantityMilli: number; unitPriceCents: number }>;
+    taxRateBps?: number | null;
+    validUntil?: string | null;
+    notes?: string | null;
+  }): Promise<OfficialQuote> {
+    return this.withAuth((headers) =>
+      firstValueFrom(this.http.post<OfficialQuote>(`/api/v1/projects/${projectId}/quotes`, input, { headers })),
+    );
+  }
+
+  async quoteAction(projectId: string, quoteId: string, action: 'submit' | 'approve' | 'send'): Promise<OfficialQuote> {
+    return this.withAuth((headers) =>
+      firstValueFrom(this.http.post<OfficialQuote>(`/api/v1/projects/${projectId}/quotes/${quoteId}/${action}`, {}, { headers })),
     );
   }
 
@@ -346,6 +421,18 @@ export class AdminApiService {
   }
 
   private async refresh(): Promise<void> {
+    if (this.refreshInFlight) {
+      return this.refreshInFlight;
+    }
+    this.refreshInFlight = this.performRefresh();
+    try {
+      await this.refreshInFlight;
+    } finally {
+      this.refreshInFlight = null;
+    }
+  }
+
+  private async performRefresh(): Promise<void> {
     const refreshToken = localStorage.getItem(REFRESH_KEY);
     if (!refreshToken) {
       this.clearSession();

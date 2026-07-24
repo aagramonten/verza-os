@@ -14,6 +14,7 @@ import {
   createCustomerAuthModule,
   type CustomerAuthModuleOverrides,
 } from './modules/customer-auth/index.js';
+import { createCustomerPortalModule } from './modules/customer-portal/index.js';
 
 export interface AppDependencies {
   env: Env;
@@ -95,6 +96,11 @@ export function buildApp({
 
   const customerAuth = createCustomerAuthModule(env, prisma, customerAuthOverrides ?? {});
   app.use('/api/v1/mi-jardin/auth', customerAuth.router);
+
+  const customerPortal = createCustomerPortalModule(prisma, {
+    authenticate: customerAuth.authenticateCustomer,
+  });
+  app.use('/api/v1/mi-jardin', customerPortal.router);
 
   const financials = createFinancialsModule(env, prisma, { authenticate: auth.authenticate });
   app.use('/api/v1', financials.router);
