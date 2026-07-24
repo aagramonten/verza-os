@@ -24,6 +24,10 @@ const STARTERS: ReadonlyArray<{ label: string; message: string }> = [
   standalone: true,
   imports: [MessageBubbleComponent, TypingIndicatorComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
+  // On the empty welcome state the list hugs its content instead of growing,
+  // so the quick actions sit right under the starters (see quick-actions
+  // margin-bottom:auto) instead of being pushed down by a filled scroll area.
+  host: { '[class.empty]': 'messages().length === 0' },
   template: `
     <div class="list">
       @for (message of messages(); track message.id) {
@@ -60,6 +64,15 @@ const STARTERS: ReadonlyArray<{ label: string; message: string }> = [
       box-sizing: border-box;
       justify-content: flex-end;
     }
+    /* Empty welcome: hug content and sit at the top so the quick actions can
+       tuck in right beneath the starters. */
+    :host.empty { flex: 0 0 auto; overflow: visible; }
+    :host.empty .list {
+      min-height: 0;
+      justify-content: flex-start;
+      padding-bottom: 6px;
+    }
+    :host.empty .welcome { margin: 0; }
     .welcome {
       margin: 0 0 auto;
       padding: 4px 2px;
