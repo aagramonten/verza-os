@@ -620,11 +620,34 @@ export class AdminLeadsComponent implements OnInit {
       const page = await this.api.leads(this.filter() ?? undefined);
       this.leads.set(page.items);
       this.total.set(page.total);
-    } catch {
-      this.error.set('No se pudieron cargar los leads. Inicia sesión de nuevo.');
+    } catch (err: unknown) {
+      this.error.set(this.describeLoadError(err));
     } finally {
       this.loading.set(false);
     }
+  }
+
+  /**
+   * Turn a load failure into a message that points at the real cause. A true
+   * session problem asks the user to sign in again; anything else (server or
+   * network) must not, so a transient 5xx or lost connection is never mistaken
+   * for an expired login.
+   */
+  private describeLoadError(err: unknown): string {
+    if (err instanceof Error && err.message === 'Authentication required') {
+      return 'Tu sesión expiró. Inicia sesión de nuevo.';
+    }
+    const status =
+      typeof err === 'object' && err !== null && 'status' in err
+        ? (err as { status: number }).status
+        : undefined;
+    if (status === 401) {
+      return 'Tu sesión expiró. Inicia sesión de nuevo.';
+    }
+    if (status === undefined || status === 0) {
+      return 'No hay conexión con el servidor. Revisa tu internet e intenta de nuevo.';
+    }
+    return `No se pudieron cargar los leads (error ${status}). Intenta de nuevo en un momento.`;
   }
 
   private async loadDetail(id: string): Promise<void> {
